@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>YouBike 每小時在站車輛數（JSON 預設資料版）</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<style>
+body { font-family:"Microsoft JhengHei",Arial; margin:20px; }
+.section { border:1px solid #ccc; border-radius:8px; padding:12px; margin-bottom:12px; }
+label { display:inline-block; width:190px; }
+input { padding:6px; margin:4px 0; }
+button { padding:6px 10px; margin-top:6px; cursor:pointer; }
+canvas { max-height:420px; }
+.msg { padding:8px 10px; background:#f6f6f6; border-radius:6px; margin-top:8px; white-space:pre-line; }
+table { border-collapse:collapse; width:100%; margin-top:8px; }
+th,td { border:1px solid #ccc; padding:4px 6px; text-align:center; }
+.overUp { background:#f8d7da; }
+.overDown { background:#dbeafe; }
+</style>
+</head>
+
+<body>
+
+<h2>YouBike 每小時在站車輛數（JSON 預設資料）</h2>
+
+<div class="section">
+  <b>資料來源：</b><span id="dataSource">載入中…</span><br>
+  <input type="file" id="fileInput" accept=".xlsx">
+</div>
+
+<div class="section">
+  <label>場站</label>
+  <input list="stations" id="station"><br>
+  <label>責任區</label>
+  <input id="area" readonly>
+  <label>總車位</label>
+  <input id="capacity" readonly><br>
+
+  <label>5 點車輛數</label>
+  <input type="number" id="init" value="20"><br>
+  <label>10–15 點調度</label>
+  <input type="number" id="dispatch15" value="0"><br>
+  <label>21–24 點調度</label>
+  <input type="number" id="dispatch21" value="0"><br>
+
+  <button onclick="refresh()">更新圖表</button>
+</div>
+
+<datalist id="stations"></datalist>
+
+<div class="section">
+  <canvas id="chart"></canvas>
+</div>
+
+<div class="section">
+  <div id="dataTable"></div>
+</div>
+
+<script>
+let DB = [];
+const HOURS = [5, ...Array.from({length:18},(_,i)=>i+6)];
+let chart = null;
+
+/* ====== 載入 JSON 預設資料 ====== */
+fetch("default_db.json")
+  .then(r => r.json())
+  .then(data => {
+    DB = data;
+    initStations();
+    dataSource.textContent = "預設資料：第一版 Excel（JSON）";
+  })
+  .catch(() => {
+    dataSource.textContent = "⚠ 無法載入預設 JSON";
+  });
+
+function initStations(){
+  stations.innerHTML = DB.map(d=>`<option value="${d.station}">`).join("");
+}
+
+/* ====== Excel 覆蓋 ====== */
+fileInput.addEventListener("change", e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = evt=>{
+    const wb = XLSX.read(evt.target.result,{type:"array"});
+    const ws = wb.Sheets["每小時變化"];
+    if(!ws){ alert("找不到工作表：每小時變化"); return; }
+    const rows = XLSX.utils.sheet_to_json(ws);
+    DB = rows.map(r=>({
+      station:r["場站"],
+      area:r["責任區"],
+      capacity:Number(r["總車位數"]),
+      deltas:Object.fromEntries(Array.from({length:18},(_,i)=>[i+6,Number(r[i+6])]))
+    }));
+    initStations();
+    dataSource.textContent = "資料來源：使用者上傳 Excel";
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+/* ====== 計算與繪圖 ====== */
+function refresh(){
+  const rec = DB.find(d=>d.station===station.value);
+  if(!rec) return;
+  area.value = rec.area;
+  capacity.value = rec.capacity;
+
+  const base = Number(init.value)||0;
+  const D15 = Number(dispatch15.value)||0;
+  const D21 = Number(dispatch21.value)||0;
+
+  const actual=[base];
+  for(let h=6;h<=23;h++){
+    let v = base + Number(rec.deltas[h]);
+    if(h>=15) v+=D15;
+    if(h>=21) v+=D21;
+    actual.push(v);
+  }
+
+  if(chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"),{
+    type:"line",
+    data:{
+      labels:HOURS,
+      datasets:[
+        {label:rec.station,data:actual,borderColor:"green"},
+        {label:"車位上限",data:HOURS.map(()=>rec.capacity),borderDash:[6,6],borderColor:"red"},
+        {label:"0",data:HOURS.map(()=>0),borderColor:"orange"}
+      ]
+    }
+  });
+
+  let html="<table><tr><th>時間</th><th>在站</th></tr>";
+  actual.forEach((v,i)=>html+=`<tr><td>${HOURS[i]}</td><td>${v}</td></tr>`);
+  dataTable.innerHTML=html+"</table>";
+}
+</script>
+
+</body>
+</html>
