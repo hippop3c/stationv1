@@ -78,7 +78,7 @@ let overflowRawData = [];
 const HOURS = [5, ...Array.from({length:18},(_,i)=>i+6)];
 const stationInput = document.getElementById("station");
 
-/* === Chart.js Plugin：超限紅字（最終穩定版） === */
+/* === 超限紅字 Plugin（已穩定） === */
 Chart.register({
   id: 'overflowLabel',
   afterDatasetsDraw(chart) {
@@ -88,20 +88,15 @@ Chart.register({
 
     ctx.save();
     ctx.fillStyle = "red";
-    ctx.font = "16px Microsoft JhengHei";   // 字再放大
+    ctx.font = "16px Microsoft JhengHei";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
 
     overflowRawData.forEach((v, i) => {
       if (v > cap || v < 0) {
         const rawX = chart.scales.x.getPixelForValue(HOURS[i]);
-        const safeX = Math.min(
-          chart.chartArea.right - 4, // ★ 關鍵：強制拉回畫布內
-          rawX - 6
-        );
-        const y = chart.scales.y.getPixelForValue(
-          Math.max(0, Math.min(cap, v))
-        );
+        const safeX = Math.min(chart.chartArea.right - 4, rawX - 6);
+        const y = chart.scales.y.getPixelForValue(v);
         ctx.fillText(v, safeX, y);
       }
     });
@@ -120,9 +115,6 @@ fetch("./default_db.json")
   stationInput.value = DB[0].station;
   refresh();
 });
-
-stationInput.addEventListener("input", refresh);
-stationInput.addEventListener("change", refresh);
 
 /* === Excel 覆蓋 === */
 fileInput.addEventListener("change", e => {
@@ -181,21 +173,34 @@ function refresh() {
   drawTable(data, rec.capacity);
 }
 
-/* === 圖表 === */
+/* === 圖表（Y 軸 ±2 倍車位） === */
 function drawChart(rec, data) {
   if (chart) chart.destroy();
+
   const cap = rec.capacity;
-  const clipped = data.map(v => Math.max(0, Math.min(cap, v)));
+  const limit = cap * 2;
+
+  const bounded = data.map(v =>
+    Math.max(-limit, Math.min(limit, v))
+  );
 
   chart = new Chart(document.getElementById("chart"), {
     type: "line",
     data: {
       labels: HOURS,
       datasets: [
-        { label: rec.station, data: clipped, borderColor: "green", tension: 0.35 },
+        { label: rec.station, data: bounded, borderColor: "green", tension: 0.35 },
         { label: "車位上限", data: HOURS.map(() => cap), borderDash: [6,6], borderColor: "red" },
         { label: "0", data: HOURS.map(() => 0), borderColor: "orange" }
       ]
+    },
+    options: {
+      scales: {
+        y: {
+          min: -limit,
+          max: limit
+        }
+      }
     }
   });
 }
