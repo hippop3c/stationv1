@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<title>YouBike 每小時在站車輛數（最終完整版）</title>
+<title>YouBike 每小時在站車輛數（最終穩定版）</title>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -14,7 +14,6 @@ label { display:inline-block; width:190px; }
 input { padding:6px; margin:4px 0; }
 button { padding:6px 12px; margin:6px 6px 0 0; cursor:pointer; }
 canvas { max-height:420px; }
-.msg { padding:8px 10px; background:#f6f6f6; border-radius:6px; margin-top:8px; }
 table { border-collapse:collapse; width:100%; margin-top:8px; }
 th,td { border:1px solid #ccc; padding:4px 6px; text-align:center; }
 .over { background:#f8d7da; }
@@ -23,7 +22,7 @@ th,td { border:1px solid #ccc; padding:4px 6px; text-align:center; }
 
 <body>
 
-<h2>YouBike 每小時在站車輛數（含最佳配置 / 匯出）</h2>
+<h2>YouBike 每小時在站車輛數（含最佳配置）</h2>
 
 <div class="section">
 <b>資料來源：</b><span id="dataSource">載入中…</span><br><br>
@@ -50,7 +49,6 @@ th,td { border:1px solid #ccc; padding:4px 6px; text-align:center; }
 
 <button onclick="solveOptimal()">一鍵計算最佳解</button>
 <button onclick="refresh()">更新圖表</button>
-<button onclick="exportCSV()">匯出 CSV</button>
 </div>
 
 <datalist id="stations"></datalist>
@@ -64,13 +62,13 @@ th,td { border:1px solid #ccc; padding:4px 6px; text-align:center; }
 </div>
 
 <script>
-/* ===== 全域 ===== */
+/* ========= 全域 ========= */
 let DB = [];
 let chart = null;
 const HOURS = [5,...Array.from({length:18},(_,i)=>i+6)];
 const stationInput = document.getElementById("station");
 
-/* ===== 載入 JSON 預設資料 ===== */
+/* ========= 載入 JSON ========= */
 fetch("./default_db.json")
 .then(r=>r.json())
 .then(data=>{
@@ -81,11 +79,11 @@ fetch("./default_db.json")
   refresh();
 });
 
-/* ===== datalist 關鍵修正 ===== */
+/* datalist 修正 */
 stationInput.addEventListener("input", refresh);
 stationInput.addEventListener("change", refresh);
 
-/* ===== Excel 覆蓋 ===== */
+/* ========= Excel 覆蓋 ========= */
 fileInput.addEventListener("change",e=>{
   const f=e.target.files[0];
   if(!f) return;
@@ -98,18 +96,20 @@ fileInput.addEventListener("change",e=>{
       station:r["場站"],
       area:r["責任區"],
       capacity:+r["總車位數"],
-      deltas:Object.fromEntries(Array.from({length:18},(_,i)=>[i+6,+r[i+6]]))
+      deltas:Object.fromEntries(
+        Array.from({length:18},(_,i)=>[i+6,+r[i+6]])
+      )
     }));
     stations.innerHTML = DB.map(d=>`<option value="${d.station}">`).join("");
-    dataSource.textContent = `資料來源：使用者上傳 Excel（${DB.length} 站）`;
+    dataSource.textContent = `使用者 Excel（${DB.length} 站）`;
     stationInput.value = DB[0].station;
     refresh();
   };
   r.readAsArrayBuffer(f);
 });
 
-/* ===== 核心刷新 ===== */
-function computeSeries(rec,b,D15,D21){
+/* ========= 計算 ========= */
+function compute(rec,b,D15,D21){
   const arr=[b];
   for(let h=6;h<=23;h++){
     let v=b+rec.deltas[h];
@@ -120,9 +120,10 @@ function computeSeries(rec,b,D15,D21){
   return arr;
 }
 
+/* ========= 刷新 ========= */
 function refresh(){
   const rec=DB.find(d=>d.station===stationInput.value);
-  if(!rec) return;
+  if(!rec)return;
 
   area.value=rec.area;
   capacity.value=rec.capacity;
@@ -131,46 +132,53 @@ function refresh(){
   const D15=+dispatch15.value||0;
   const D21=+dispatch21.value||0;
 
-  const data=computeSeries(rec,b,D15,D21);
+  const data=compute(rec,b,D15,D21);
   drawChart(rec,data);
   drawTable(data,rec.capacity);
 }
 
-/* ===== 圖表（含超限標記） ===== */
+/* ========= 圖表（已修正 canvas 問題） ========= */
 function drawChart(rec,data){
   if(chart)chart.destroy();
   const cap=rec.capacity;
-  chart=new Chart(chartCanvas,{
-    type:"line",
-    data:{
-      labels:HOURS,
-      datasets:[
-        {label:rec.station,data:data,borderColor:"green",tension:0.35},
-        {label:"車位上限",data:HOURS.map(()=>cap),borderDash:[6,6],borderColor:"red"},
-        {label:"0",data:HOURS.map(()=>0),borderColor:"orange"}
-      ]
+
+  const clipped=data.map(v=>Math.max(0,Math.min(cap,v)));
+
+  chart=new Chart(
+    document.getElementById("chart"),
+    {
+      type:"line",
+      data:{
+        labels:HOURS,
+        datasets:[
+          {label:rec.station,data:clipped,borderColor:"green",tension:0.35},
+          {label:"車位上限",data:HOURS.map(()=>cap),borderDash:[6,6],borderColor:"red"},
+          {label:"0",data:HOURS.map(()=>0),borderColor:"orange"}
+        ]
+      }
     }
-  });
+  );
 }
 
-/* ===== 表格 ===== */
+/* ========= 表格 ========= */
 function drawTable(data,cap){
   let h="<table><tr><th>時間</th><th>在站</th></tr>";
   data.forEach((v,i)=>{
     h+=`<tr class="${(v<=0||v>=cap)?'over':''}">
-         <td>${HOURS[i]}</td><td>${v}</td></tr>`;
+          <td>${HOURS[i]}</td><td>${v}</td>
+        </tr>`;
   });
   dataTable.innerHTML=h+"</table>";
 }
 
-/* ===== 最佳解 ===== */
+/* ========= 最佳解 ========= */
 function solveOptimal(){
   const rec=DB.find(d=>d.station===stationInput.value);
-  if(!rec) return;
+  if(!rec)return;
   const cap=rec.capacity;
 
   for(let b=1;b<cap;b++){
-    const arr=computeSeries(rec,b,0,0);
+    const arr=compute(rec,b,0,0);
     if(arr.every(v=>v>0&&v<cap)){
       init.value=b;
       dispatch15.value=0;
@@ -179,21 +187,7 @@ function solveOptimal(){
       return;
     }
   }
-  alert("無零調度解，請人工調整");
-}
-
-/* ===== 匯出 CSV ===== */
-function exportCSV(){
-  const rec=DB.find(d=>d.station===stationInput.value);
-  if(!rec)return;
-  const data=computeSeries(rec,+init.value,+dispatch15.value,+dispatch21.value);
-  let csv="時間,在站\n";
-  data.forEach((v,i)=>csv+=`${HOURS[i]},${v}\n`);
-  const blob=new Blob([csv],{type:"text/csv"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=`${rec.station}_在站車輛.csv`;
-  a.click();
+  alert("此場站無零調度可行解");
 }
 </script>
 
