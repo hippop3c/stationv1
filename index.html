@@ -1,733 +1,269 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>YouBike 每小時在站車輛數（最終穩定版）</title>
+<meta charset="utf-8" />
+<title>YouBike 每小時在站車輛數（最終穩定版）</title>
 
-  <!-- Chart.js CDN (GitHub Pages OK) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <style>
-    :root{
-      --border:#cfd7e3;
-      --muted:#6b7280;
-      --bg:#ffffff;
-      --panel:#f8fafc;
-      --good:#2e7d32;
-      --badbg:#fde2e2;
-      --red:#d32f2f;
-      --orange:#f59e0b;
-      --green:#0a7a1f;
-    }
-    body{
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", Arial, sans-serif;
-      background: var(--bg);
-      margin: 18px;
-      color:#111827;
-    }
-    h1{
-      margin: 0 0 12px 0;
-      font-size: 34px;
-      font-weight: 800;
-      letter-spacing: .2px;
-    }
+<style>
+body{
+  font-family: system-ui, -apple-system, "Segoe UI", Arial;
+  margin:16px;
+  background:#fff;
+}
 
-    /* ===== top controls (keep your current layout vibe, but aligned) ===== */
-    .controls{
-      border:1px solid var(--border);
-      border-radius:10px;
-      padding:14px 14px 10px 14px;
-      display:grid;
-      grid-template-columns: 90px 280px 90px 220px 90px 160px 110px 190px 110px 190px 110px 190px auto;
-      gap:10px 10px;
-      align-items:center;
-    }
-    .controls .meta{
-      grid-column: 1 / -1;
-      display:flex;
-      gap:12px;
-      align-items:center;
-      color:var(--muted);
-      font-size: 14px;
-      padding-top:2px;
-    }
-    label{
-      font-size: 18px;
-      font-weight: 700;
-      text-align:right;
-      white-space:nowrap;
-    }
-    input{
-      height: 34px;
-      border:1px solid var(--border);
-      border-radius: 6px;
-      padding: 0 10px;
-      font-size: 18px;
-      outline: none;
-    }
-    input:disabled{
-      background:#f3f4f6;
-      color:#374151;
-    }
-    .btns{
-      display:flex;
-      gap:10px;
-      justify-content:flex-end;
-      align-items:center;
-      grid-column: 12 / -1;
-    }
-    button{
-      height: 36px;
-      border:1px solid #9aa4b2;
-      background:#f5f5f5;
-      border-radius:6px;
-      padding: 0 14px;
-      font-size: 16px;
-      font-weight: 700;
-      cursor:pointer;
-      white-space:nowrap;
-    }
-    button:hover{ filter:brightness(.98); }
-    button.primary{
-      background:#eaf2ff;
-      border-color:#7aa2ff;
-    }
+h1{ margin-bottom:12px; }
 
-    /* ===== main layout ===== */
-    .main{
-      margin-top: 14px;
-      display:grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 14px;
-      align-items: stretch; /* important: make right side match left height */
-    }
-    .panel{
-      border:1px solid var(--border);
-      border-radius:10px;
-      background:#fff;
-      padding: 10px 12px;
-      min-height: 560px; /* stable alignment like your screenshot */
-      display:flex;
-      flex-direction:column;
-    }
-    .chartWrap{
-      flex:1;
-      min-height: 520px;
-    }
-    canvas{ width:100% !important; height:100% !important; }
+.panel{
+  border:1px solid #cfd6e4;
+  border-radius:10px;
+  padding:12px;
+  margin-bottom:12px;
+}
 
-    /* ===== right panel: summary + table align with chart height ===== */
-    .right{
-      padding: 10px 12px;
-      display:flex;
-      flex-direction:column;
-    }
-    .summary{
-      background: var(--panel);
-      border-left: 6px solid var(--good);
-      border-radius: 8px;
-      padding: 12px 12px;
-      margin-bottom: 10px;
-      font-size: 20px;         /* larger */
-      line-height: 1.35;
-      font-weight: 800;
-      white-space: pre-line;
-    }
-    .summary small{
-      display:block;
-      margin-top:6px;
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--muted);
-    }
-    .tableWrap{
-      border:1px solid var(--border);
-      border-radius:10px;
-      overflow:hidden;
-      flex:1;                 /* fill the remaining height */
-      min-height: 0;          /* enable scroll properly */
-      display:flex;
-      flex-direction:column;
-      background:#fff;
-    }
-    table{
-      width:100%;
-      border-collapse:collapse;
-      font-size: 18px;         /* larger */
-    }
-    thead th{
-      position: sticky;
-      top: 0;
-      background:#fff;
-      z-index: 2;
-      font-weight: 900;
-      font-size: 20px;
-      padding: 10px 6px;
-      border-bottom:1px solid var(--border);
-    }
-    tbody{
-      display:block;
-      overflow:auto;
-      flex:1;
-    }
-    thead, tbody tr{
-      display:table;
-      width:100%;
-      table-layout:fixed;
-    }
-    td{
-      border-top:1px solid var(--border);
-      padding: 6px 6px;
-      text-align:center;
-      font-weight: 700;
-    }
-    tr.bad{ background: var(--badbg); }
-    .hint{
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 700;
-    }
+.controls{
+  display:grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap:8px 12px;
+  align-items:center;
+}
 
-    /* keep controls responsive */
-    @media (max-width: 1220px){
-      .controls{
-        grid-template-columns: 90px 1fr;
-      }
-      label{ text-align:left; }
-      .btns{ grid-column: 1 / -1; justify-content:flex-start; }
-    }
-  </style>
+label{ white-space:nowrap; }
+
+input{
+  padding:4px 6px;
+  font-size:14px;
+}
+
+.btns{
+  grid-column:1 / -1;
+  display:flex;
+  gap:10px;
+  margin-top:6px;
+}
+
+button{
+  padding:6px 12px;
+  font-size:14px;
+  cursor:pointer;
+}
+
+.main{
+  display:grid;
+  grid-template-columns: 2fr 1fr;
+  gap:12px;
+}
+
+.chart-box{
+  border:1px solid #cfd6e4;
+  border-radius:10px;
+  padding:8px;
+}
+
+.side{
+  border:1px solid #cfd6e4;
+  border-radius:10px;
+  padding:8px;
+  display:flex;
+  flex-direction:column;
+}
+
+.summary{
+  border-left:4px solid #2e7d32;
+  background:#f6faf6;
+  padding:10px;
+  font-size:16px;
+  font-weight:600;
+  margin-bottom:8px;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:16px;
+}
+
+th,td{
+  border:1px solid #ccc;
+  padding:6px 4px;
+  text-align:center;
+}
+
+tbody tr.warn{ background:#fde2e2; }
+
+#status{
+  margin-top:6px;
+  font-size:13px;
+  color:#555;
+}
+</style>
 </head>
 
 <body>
-  <h1>YouBike 每小時在站車輛數（最終穩定版）</h1>
 
+<h1>YouBike 每小時在站車輛數（最終穩定版）</h1>
+
+<div class="panel">
   <div class="controls">
-    <label for="stationInput">場站</label>
-    <input id="stationInput" placeholder="可輸入關鍵字模糊搜尋，例如：信義敦化" />
+    <label>場站</label>
+    <input id="station">
 
     <label>責任區</label>
-    <input id="areaInput" disabled />
+    <input id="area" readonly>
 
     <label>總車位</label>
-    <input id="capInput" disabled />
+    <input id="capacity" readonly>
 
-    <label for="v5">5 點車輛數</label>
-    <input id="v5" type="number" value="1" min="1" />
+    <label>5 點車輛數</label>
+    <input id="b5" type="number" min="0">
 
-    <label for="d1015">10–15 調度</label>
-    <input id="d1015" type="number" value="0" />
+    <label>10–15 調度</label>
+    <input id="d10" type="number">
 
-    <label for="d2124">21–24 調度</label>
-    <input id="d2124" type="number" value="0" />
+    <label>21–24 調度</label>
+    <input id="d21" type="number">
 
     <div class="btns">
-      <button class="primary" id="btnUpdate">更新圖表</button>
-      <button id="btnBest">最佳解（只配 5 點）</button>
-      <button id="btnAuto">自動求解（最佳→次佳→最後）</button>
-    </div>
-
-    <div class="meta">
-      <span id="dbInfo" class="hint">資料來源：default_db.json（載入中…）</span>
-      <span id="status" class="hint"></span>
+      <button onclick="updateChart()">更新圖表</button>
+      <button onclick="bestOnly()">最佳解（只配 5 點）</button>
+      <button onclick="autoSolve()">自動求解（最佳→次佳→最後）</button>
     </div>
   </div>
 
-  <div class="main">
-    <div class="panel">
-      <div class="chartWrap">
-        <canvas id="chart"></canvas>
-      </div>
-    </div>
+  <div id="status">資料來源：default_db.json（載入中…）</div>
+</div>
 
-    <div class="panel right">
-      <div id="summary" class="summary">請輸入場站（支援模糊搜尋）。</div>
-      <div class="tableWrap">
-        <table>
-          <thead>
-            <tr><th>時間</th><th>在站</th></tr>
-          </thead>
-          <tbody id="tbody"></tbody>
-        </table>
-      </div>
-    </div>
+<div class="main">
+  <div class="chart-box">
+    <canvas id="chart"></canvas>
   </div>
+
+  <div class="side">
+    <div id="summary" class="summary">請輸入場站（支援模糊搜尋）。</div>
+    <table>
+      <thead><tr><th>時間</th><th>在站</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
 
 <script>
-/* ===========================
-   DB + helpers
-=========================== */
-let DB = [];
-let chart = null;
+let DB=[], cur=null, chart=null;
 
-const $ = (id) => document.getElementById(id);
-
-const stationInput = $("stationInput");
-const areaInput = $("areaInput");
-const capInput = $("capInput");
-const v5Input = $("v5");
-const d1015Input = $("d1015");
-const d2124Input = $("d2124");
-const summaryEl = $("summary");
-const tbody = $("tbody");
-const dbInfo = $("dbInfo");
-const statusEl = $("status");
-
-const HOURS = Array.from({length: 19}, (_,i)=> i+5); // 5..23
-const HOURS_6_23 = Array.from({length: 18}, (_,i)=> i+6); // 6..23
-
-function toInt(x, fallback=0){
-  const n = Number(x);
-  return Number.isFinite(n) ? Math.trunc(n) : fallback;
-}
-
-function normalize(s){
-  return String(s||"").trim();
-}
-
-/* 模糊搜尋：包含就算命中，若多筆命中，取最短 station（較精準） */
-function findStationByFuzzy(name){
-  const q = normalize(name);
-  if(!q) return null;
-  const hits = DB.filter(r => (r.station||"").includes(q));
-  if(hits.length === 0) return null;
-  hits.sort((a,b)=> (a.station.length - b.station.length));
-  return hits[0];
-}
-
-function getDelta(st, hour){
-  if(hour === 5) return 0;
-  const v = st.deltas?.[String(hour)];
-  return (typeof v === "number") ? v : 0;
-}
-
-function in1015(h){ return h>=10 && h<=15; }
-function in2123(h){ return h>=21 && h<=23; }
-
-/* 計算：符合你 Excel 邏輯
-   在站(h) = v5 + delta[h] + (h in 10..15 ? d1015 : 0) + (h in 21..23 ? d2124 : 0)
-*/
-function calcSeries(st, v5, d1015, d2124){
-  const vals = HOURS.map(h=>{
-    let v = v5 + getDelta(st,h);
-    if(in1015(h)) v += d1015;
-    if(in2123(h)) v += d2124;
-    return v;
-  });
-  return vals;
-}
-
-function isAllFeasible(st, vals){
-  const cap = st.capacity;
-  // check only 6..23 per your spec for feasibility
-  for(let idx=1; idx<vals.length; idx++){
-    const v = vals[idx];
-    if(v < 0 || v > cap) return false;
-  }
-  return true;
-}
-
-/* violation for fallback (6..23) */
-function totalViolation(st, vals){
-  const cap = st.capacity;
-  let sum = 0;
-  for(let idx=1; idx<vals.length; idx++){
-    const v = vals[idx];
-    if(v > cap) sum += (v - cap);
-    else if(v < 0) sum += (0 - v);
-  }
-  return sum;
-}
-
-/* For fixed d1015,d2124, compute feasible range of v5 that makes all 6..23 within [0,cap]
-   Constraint: 0 <= v5 + off(h) <= cap  =>  -off <= v5 <= cap - off
-*/
-function feasibleV5Range(st, d1015, d2124){
-  const cap = st.capacity;
-  let L = -Infinity;
-  let U = Infinity;
-  for(const h of HOURS_6_23){
-    let off = getDelta(st,h);
-    if(in1015(h)) off += d1015;
-    if(in2123(h)) off += d2124;
-    L = Math.max(L, -off);
-    U = Math.min(U, cap - off);
-  }
-  // v5 must be integer and >0 and <=cap (reasonable)
-  const lo = Math.max(1, Math.ceil(L));
-  const hi = Math.min(cap, Math.floor(U));
-  return [lo, hi];
-}
-
-/* ===========================
-   Solve: Best / Second / Fallback
-=========================== */
-
-/* Best: only v5, dispatch 0 */
-function solveBest(st){
-  const [lo, hi] = feasibleV5Range(st, 0, 0);
-  if(lo <= hi){
-    const v5 = lo; // smallest feasible v5
-    return { kind:"最佳解", v5, d1015:0, d2124:0 };
-  }
-  return null;
-}
-
-/* Second best:
-   - must be feasible (all 6..23 within range)
-   - priority: single window, then both
-   - minimize |dispatch| (and for both, minimize |d1015|+|d2124|)
-*/
-function solveSecondBest(st){
-  const cap = st.capacity;
-  const R = Math.max(10, Math.min(80, cap*2)); // safe search radius
-
-  // helper to build solution if feasible
-  const tryDispatch = (d1015, d2124)=>{
-    const [lo, hi] = feasibleV5Range(st, d1015, d2124);
-    if(lo <= hi){
-      return { kind:"次佳解", v5: lo, d1015, d2124 };
-    }
-    return null;
-  };
-
-  // 1) only 10-15
-  for(let r=1; r<=R; r++){
-    for(const sgn of [-1, 1]){
-      const sol = tryDispatch(sgn*r, 0);
-      if(sol) return sol;
-    }
-  }
-
-  // 2) only 21-24
-  for(let r=1; r<=R; r++){
-    for(const sgn of [-1, 1]){
-      const sol = tryDispatch(0, sgn*r);
-      if(sol) return sol;
-    }
-  }
-
-  // 3) both windows, by manhattan radius
-  for(let m=1; m<=R; m++){
-    for(let a=-m; a<=m; a++){
-      const bAbs = m - Math.abs(a);
-      for(const b of (bAbs===0 ? [0] : [-bAbs, bAbs])){
-        const sol = tryDispatch(a, b);
-        if(sol) return sol;
-      }
-    }
-  }
-
-  return null;
-}
-
-/* Fallback:
-   minimize total violation over (v5>0, d1015,d2124 integers).
-   We search dispatch grid within [-cap, cap] (safe & meaningful),
-   and for each dispatch pair, choose v5 that minimizes totalViolation via breakpoints.
-*/
-function solveFallback(st){
-  const cap = st.capacity;
-  const D = cap; // search dispatch in [-cap,cap]
-  let best = null;
-
-  // Precompute base offsets per hour (delta only)
-  const baseOff = HOURS.map(h => getDelta(st,h));
-
-  function evalWithDispatch(d1015, d2124){
-    // offsets including dispatch
-    const off = baseOff.map((o, idx)=>{
-      const h = HOURS[idx];
-      let x = o;
-      if(in1015(h)) x += d1015;
-      if(in2123(h)) x += d2124;
-      return x;
-    });
-
-    // candidates for v5 that minimize piecewise-linear violation
-    const cand = new Set([1, cap]);
-    for(let idx=1; idx<off.length; idx++){
-      const o = off[idx];
-      // breakpoints near -o (hit 0) and cap-o (hit cap)
-      const t1 = -o;
-      const t2 = cap - o;
-      for(const t of [t1, t2]){
-        for(const v of [Math.floor(t), Math.ceil(t)]){
-          if(v >= 1 && v <= cap) cand.add(v);
-        }
-      }
-    }
-
-    let bestLocal = null;
-    for(const v5 of cand){
-      // v5 must be > 0 already ensured
-      const vals = off.map(x => v5 + x);
-      const viol = totalViolation(st, vals);
-      // tie-break: smaller violation, then smaller |dispatch|, then smaller v5
-      const dispMag = Math.abs(d1015) + Math.abs(d2124);
-      if(!bestLocal ||
-         viol < bestLocal.viol ||
-         (viol === bestLocal.viol && dispMag < bestLocal.dispMag) ||
-         (viol === bestLocal.viol && dispMag === bestLocal.dispMag && v5 < bestLocal.v5)
-      ){
-        bestLocal = { v5, vals, viol, dispMag };
-      }
-    }
-    return bestLocal ? { d1015, d2124, ...bestLocal } : null;
-  }
-
-  for(let a=-D; a<=D; a++){
-    for(let b=-D; b<=D; b++){
-      const r = evalWithDispatch(a,b);
-      if(!r) continue;
-      if(!best ||
-         r.viol < best.viol ||
-         (r.viol === best.viol && r.dispMag < best.dispMag) ||
-         (r.viol === best.viol && r.dispMag === best.dispMag && r.v5 < best.v5)
-      ){
-        best = r;
-      }
-    }
-  }
-
-  return {
-    kind: "最後解",
-    v5: best.v5,
-    d1015: best.d1015,
-    d2124: best.d2124,
-    viol: best.viol
-  };
-}
-
-/* Auto solve in order */
-function solveAuto(st){
-  const best = solveBest(st);
-  if(best) return best;
-
-  const second = solveSecondBest(st);
-  if(second) return second;
-
-  return solveFallback(st);
-}
-
-/* ===========================
-   Render UI
-=========================== */
-function render(st, v5, d1015, d2124, meta){
-  areaInput.value = st.area ?? "";
-  capInput.value = st.capacity ?? "";
-  v5Input.value = v5;
-  d1015Input.value = d1015;
-  d2124Input.value = d2124;
-
-  const vals = calcSeries(st, v5, d1015, d2124);
-  const cap = st.capacity;
-
-  // Table
-  tbody.innerHTML = "";
-  for(let i=0;i<HOURS.length;i++){
-    const h = HOURS[i];
-    const v = vals[i];
-    const tr = document.createElement("tr");
-    if(i>=1 && (v<0 || v>cap)) tr.className = "bad"; // highlight 6..23 only
-    tr.innerHTML = `<td>${h}</td><td>${v}</td>`;
-    tbody.appendChild(tr);
-  }
-
-  // Summary
-  const feasible = isAllFeasible(st, vals);
-  const minV = Math.min(...vals.slice(1)); // 6..23
-  const maxV = Math.max(...vals.slice(1)); // 6..23
-  const viol = totalViolation(st, vals);
-
-  let head = `${meta.kind}：5 點配置 ${v5}，10–15 調度 ${d1015}，21–24 調度 ${d2124}。`;
-  let tail = "";
-
-  if(meta.kind === "最後解"){
-    tail = `\n已最小化超限總量（Σ violation）＝${viol}。`;
-  }
-
-  if(feasible){
-    summaryEl.innerHTML =
-      `${head}\n全日無超限，皆介於 0–${cap}。${tail ? tail : ""}\n` +
-      `<small>最低（6–23）：${minV}；最高（6–23）：${maxV}；總車位：${cap}</small>`;
-  }else{
-    // show first/last hour violating
-    let first = null, last = null;
-    for(let i=1;i<vals.length;i++){
-      if(vals[i] < 0 || vals[i] > cap){
-        if(first===null) first = HOURS[i];
-        last = HOURS[i];
-      }
-    }
-    summaryEl.innerHTML =
-      `${head}\n超限：${first}–${last} 點；最低（6–23）：${minV}；最高（6–23）：${maxV}。${tail ? tail : ""}\n` +
-      `<small>提示：紅底為超限時段（僅檢查 6–23）。</small>`;
-  }
-
-  // Chart
-  drawChart(st, vals);
-}
-
-function drawChart(st, vals){
-  const cap = st.capacity;
-  const upper = HOURS.map(()=>cap);
-  const zero = HOURS.map(()=>0);
-
-  const yMin = Math.min(...vals, 0, -cap*2);
-  const yMax = Math.max(...vals, cap, cap*2);
-
-  const ctx = $("chart");
-
-  if(chart) chart.destroy();
-  chart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: HOURS,
-      datasets: [
-        {
-          label: st.station,
-          data: vals,
-          borderColor: getComputedStyle(document.documentElement).getPropertyValue("--green").trim() || "green",
-          borderWidth: 2.5,
-          pointRadius: 3,
-          pointHoverRadius: 4,
-          tension: 0.35
-        },
-        {
-          label: "車位上限",
-          data: upper,
-          borderColor: getComputedStyle(document.documentElement).getPropertyValue("--red").trim() || "red",
-          borderWidth: 2,
-          borderDash: [6,4],
-          pointRadius: 2
-        },
-        {
-          label: "0",
-          data: zero,
-          borderColor: getComputedStyle(document.documentElement).getPropertyValue("--orange").trim() || "orange",
-          borderWidth: 2,
-          pointRadius: 2
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode:"index", intersect:false },
-      plugins: {
-        legend: { position:"top", labels:{ boxWidth: 36, font:{ size: 14, weight: "700" } } },
-        tooltip: { enabled:true }
-      },
-      scales: {
-        x: { ticks:{ font:{ size: 12 } } },
-        y: {
-          min: Math.floor(yMin/2)*2,
-          max: Math.ceil(yMax/2)*2,
-          ticks:{ font:{ size: 12 } }
-        }
-      }
-    }
-  });
-}
-
-/* ===========================
-   Actions
-=========================== */
-function getSelectedStation(){
-  const name = normalize(stationInput.value);
-  const st = findStationByFuzzy(name);
-  if(!st){
-    statusEl.textContent = "找不到場站，請輸入更完整站名（支援模糊搜尋）。";
-    return null;
-  }
-  statusEl.textContent = "";
-  return st;
-}
-
-function updateManual(){
-  const st = getSelectedStation();
-  if(!st) return;
-
-  const v5 = Math.max(1, toInt(v5Input.value, 1)); // must be >0
-  const d1015 = toInt(d1015Input.value, 0);
-  const d2124 = toInt(d2124Input.value, 0);
-
-  render(st, v5, d1015, d2124, {kind:"手動顯示"});
-}
-
-function clickBest(){
-  const st = getSelectedStation();
-  if(!st) return;
-
-  const sol = solveBest(st);
-  if(!sol){
-    alert("此站不存在「最佳解」（僅 5 點配置、不調度）。請使用「自動求解」。");
-    return;
-  }
-  render(st, sol.v5, sol.d1015, sol.d2124, sol);
-}
-
-function clickAuto(){
-  const st = getSelectedStation();
-  if(!st) return;
-
-  // show busy hint quickly (large fallback search can take a moment)
-  statusEl.textContent = "求解中…（最佳→次佳→最後）";
-  setTimeout(()=>{
-    const sol = solveAuto(st);
-    render(st, sol.v5, sol.d1015, sol.d2124, sol);
-    statusEl.textContent = "";
-  }, 20);
-}
-
-/* ===========================
-   Wire events
-=========================== */
-$("btnUpdate").addEventListener("click", updateManual);
-$("btnBest").addEventListener("click", clickBest);
-$("btnAuto").addEventListener("click", clickAuto);
-
-// typing: debounce update station linkage (area/cap) but not auto-solve
-let t = null;
-stationInput.addEventListener("input", ()=>{
-  clearTimeout(t);
-  t = setTimeout(()=>{
-    const st = findStationByFuzzy(stationInput.value);
-    if(st){
-      areaInput.value = st.area ?? "";
-      capInput.value = st.capacity ?? "";
-      statusEl.textContent = "";
-    }else{
-      areaInput.value = "";
-      capInput.value = "";
-      statusEl.textContent = "找不到場站，請輸入更完整站名（支援模糊搜尋）。";
-    }
-  }, 120);
+fetch("./default_db.json",{cache:"no-store"})
+.then(r=>r.json())
+.then(d=>{
+  DB=d;
+  status.textContent=`資料來源：default_db.json（${DB.length} 站）`;
+})
+.catch(e=>{
+  status.textContent="❌ default_db.json 載入失敗";
+  console.error(e);
 });
 
-/* Load DB */
-fetch("default_db.json", { cache: "no-store" })
-  .then(r => {
-    if(!r.ok) throw new Error("default_db.json 載入失敗：" + r.status);
-    return r.json();
-  })
-  .then(j => {
-    DB = Array.isArray(j) ? j : [];
-    dbInfo.textContent = `資料來源：default_db.json（${DB.length} 站）`;
-    // optional: preload an example if user already has input
-    if(normalize(stationInput.value)){
-      updateManual();
-    }else{
-      summaryEl.textContent = "請輸入場站（支援模糊搜尋），或按「自動求解」。";
-    }
-  })
-  .catch(err => {
-a=>{
-    dbInfo.textContent = "資料來源：default_db.json（載入失敗）";
-    statusEl.textContent = String(err).slice(0,200);
+station.oninput=()=>{
+  if(!DB.length) return;
+  const q=station.value.trim();
+  if(!q) return;
+  const hit=DB.find(r=>r.station.includes(q));
+  if(!hit){
+    summary.textContent="找不到場站，請輸入更完整站名。";
+    return;
+  }
+  cur=hit;
+  area.value=hit.area||"";
+  capacity.value=hit.capacity;
+  draw(calc());
+};
+
+function calc(){
+  if(!cur) return [];
+  const b5v=Math.max(0, +b5.value||0);
+  const d10v=+d10.value||0;
+  const d21v=+d21.value||0;
+
+  let res=[], v=b5v;
+  for(let h=5;h<=23;h++){
+    if(h>=10 && h<=15) v+=d10v;
+    if(h>=21) v+=d21v;
+    const delta=cur.deltas?.[h];
+    if(delta!==undefined) v+=delta;
+    res.push({h,v});
+  }
+  return res;
+}
+
+function draw(arr){
+  if(!arr.length) return;
+  const cap=cur.capacity;
+  summary.textContent=
+    `5點=${b5.value}｜10–15=${d10.value}｜21–24=${d21.value} ｜限制 0–${cap}`;
+
+  tbody.innerHTML="";
+  arr.forEach(o=>{
+    const tr=document.createElement("tr");
+    if(o.v<0 || o.v>cap) tr.className="warn";
+    tr.innerHTML=`<td>${o.h}</td><td>${o.v}</td>`;
+    tbody.appendChild(tr);
   });
+
+  const labels=arr.map(o=>o.h);
+  const data=arr.map(o=>o.v);
+
+  if(chart) chart.destroy();
+  chart=new Chart(document.getElementById("chart"),{
+    type:"line",
+    data:{
+      labels,
+      datasets:[
+        {label:cur.station,data,borderColor:"green",tension:.3},
+        {label:"上限",data:labels.map(_=>cap),borderColor:"red",borderDash:[5,5]},
+        {label:"0",data:labels.map(_=>0),borderColor:"orange"}
+      ]
+    },
+    options:{
+      plugins:{legend:{position:"top"}},
+      scales:{y:{beginAtZero:false}}
+    }
+  });
+}
+
+function updateChart(){ draw(calc()); }
+
+function bestOnly(){
+  if(!cur) return;
+  let best=0,score=1e9;
+  for(let b=0;b<=cur.capacity;b++){
+    b5.value=b; d10.value=0; d21.value=0;
+    const a=calc();
+    const s=a.reduce((t,o)=>t+(o.v<0||o.v>cur.capacity),0);
+    if(s<score){score=s;best=b;}
+  }
+  b5.value=best; updateChart();
+}
+
+function autoSolve(){
+  if(!cur) return;
+  let best=null;
+  for(let b=0;b<=cur.capacity;b++){
+    for(let d10v=-5;d10v<=5;d10v++){
+      for(let d21v=-5;d21v<=5;d21v++){
+        b5.value=b; d10.value=d10v; d21.value=d21v;
+        const a=calc();
+        const bad=a.reduce((t,o)=>t+(o.v<0||o.v>cur.capacity),0);
+        if(!best || bad<best.bad){
+          best={b,d10v,d21v,bad};
+          if(bad===0) break;
+        }
+      }
+    }
+  }
+  b5.value=best.b;
+  d10.value=best.d10v;
+  d21.value=best.d21v;
+  updateChart();
+}
 </script>
 </body>
 </html>
