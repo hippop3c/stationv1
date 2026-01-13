@@ -1,47 +1,70 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<title>YouBike 每小時在站車輛數（最終版）</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>YouBike 每小時在站車輛數（GitHub 穩定版 / 內建全站資料）</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-body { font-family: Arial, "Noto Sans TC", sans-serif; }
-.box { border:1px solid #ccc; padding:16px; border-radius:6px; margin-bottom:16px; }
-.row { display:flex; gap:20px; }
-label { display:inline-block; width:120px; }
-input { width:90px; }
-button { margin-left:6px; }
-table { border-collapse:collapse; width:100%; }
-th,td { border:1px solid #ccc; padding:4px 8px; text-align:center; }
-tr.over { background:#fde0e0; }
-.summary { background:#f6f8fa; border-left:4px solid #4caf50; padding:8px; margin-bottom:8px; line-height:1.6; }
+  body{font-family:Arial,"Noto Sans TC",sans-serif;margin:20px}
+  h1{margin:0 0 12px 0}
+  .panel{border:1px solid #d0d7de;border-radius:8px;padding:12px;margin-bottom:12px}
+  .grid{display:grid;grid-template-columns:140px 220px 140px 220px 140px 220px auto;gap:8px;align-items:center}
+  .grid label{justify-self:end}
+  input{padding:6px 8px;border:1px solid #d0d7de;border-radius:6px;width:200px}
+  input[type="number"]{width:120px}
+  .btn{padding:8px 12px;border:1px solid #6e7781;border-radius:6px;background:#f6f8fa;cursor:pointer}
+  .btn:hover{background:#eef1f4}
+  .row{display:flex;gap:12px}
+  .left{flex:2}
+  .right{flex:1}
+  .summary{background:#f6f8fa;border-left:4px solid #2da44e;padding:10px;margin-bottom:10px;line-height:1.6;border-radius:6px}
+  table{width:100%;border-collapse:collapse}
+  th,td{border:1px solid #d0d7de;padding:6px;text-align:center}
+  tr.warn{background:#fde0e0}
+  .hint{color:#57606a;font-size:12px;margin-top:6px}
 </style>
 </head>
 <body>
+<h1>YouBike 每小時在站車輛數（最終版）</h1>
 
-<h2>YouBike 每小時在站車輛數（最終版）</h2>
+<div class="panel">
+  <div class="grid">
+    <label>場站</label>
+    <input id="stationInput" list="stationList" placeholder="可輸入部分站名（模糊搜尋）" />
+    <datalist id="stationList"></datalist>
 
-<div class="box">
-  <div>
-    <label>場站</label><input id="station" value="捷運科技大樓站">
-    <label>責任區</label><input id="area" value="ZJ2">
-    <label>總車位</label><input id="capacity" type="number" value="28">
+    <label>責任區</label>
+    <input id="areaInput" readonly />
+
+    <label>總車位</label>
+    <input id="capInput" type="number" readonly />
+
+    <div></div>
+
+    <label>5 點車輛數</label>
+    <input id="v5Input" type="number" value="0" />
+
+    <label>10–15 調度</label>
+    <input id="d1015Input" type="number" value="0" />
+
+    <label>21–24 調度</label>
+    <input id="d2124Input" type="number" value="0" />
+
+    <div style="display:flex;gap:8px;justify-content:flex-start">
+      <button class="btn" id="btnUpdate">更新圖表</button>
+      <button class="btn" id="btnBest">一鍵產出最佳解</button>
+    </div>
   </div>
-  <div style="margin-top:8px">
-    <label>5 點車輛數</label><input id="v5" type="number" value="12">
-    <label>10–15 調度</label><input id="adj1015" type="number" value="0">
-    <label>21–24 調度</label><input id="adj2124" type="number" value="0">
-    <button onclick="recalc()">更新圖表</button>
-    <button onclick="solveBest()">一鍵產出最佳解</button>
-  </div>
+  <div class="hint" id="sourceHint">資料來源：default_db.json（3163 站）</div>
 </div>
 
 <div class="row">
-  <div class="box" style="flex:2">
+  <div class="panel left">
     <canvas id="chart" height="320"></canvas>
   </div>
-  <div class="box" style="flex:1">
-    <div id="summary" class="summary"></div>
+  <div class="panel right">
+    <div id="summary" class="summary">載入資料中…</div>
     <table>
       <thead><tr><th>時間</th><th>在站</th></tr></thead>
       <tbody id="tbody"></tbody>
@@ -50,115 +73,284 @@ tr.over { background:#fde0e0; }
 </div>
 
 <script>
-/* === 內建：第一版 Excel 每小時變化量 === */
-const hourlyDelta = {
-  6:-9, 7:-18, 8:-11, 9:-9, 10:-9,
-  11:-18, 12:-11, 13:-9, 14:-11, 15:-14,
-  16:-25, 17:-35, 18:-34, 19:-39, 20:-40,
-  21:-38, 22:-33, 23:-35
-};
+/* ------------------ 全站資料（由 default_db.json 載入） ------------------ */
+let STATIONS = [];           // array of {name,area,id,cap,deltas}
+let stationByName = new Map();
 
-let chart;
+async function loadDB(){
+  // GitHub Pages 可能有快取，帶上小 query 參數避免舊檔
+  const url = "default_db.json?v=" + Date.now();
+  const res = await fetch(url, {cache:"no-store"});
+  if(!res.ok) throw new Error("default_db.json 載入失敗：" + res.status);
+  const data = await res.json();
+  STATIONS = data.stations || [];
+  stationByName = new Map(STATIONS.map(s => [s.name, s]));
+  document.getElementById("sourceHint").textContent = `資料來源：default_db.json（${STATIONS.length} 站）`;
 
-/* === 計算核心：逐小時累加（A1） === */
-function compute(v5, adj1015, adj2124, cap) {
-  let cur = v5;
+  // datalist
+  const dl = document.getElementById("stationList");
+  dl.innerHTML = "";
+  // 站名很多，datalist 仍可用；先塞全部
+  const frag = document.createDocumentFragment();
+  for(const s of STATIONS){
+    const opt = document.createElement("option");
+    opt.value = s.name;
+    frag.appendChild(opt);
+  }
+  dl.appendChild(frag);
+}
+
+/* ------------------ 模糊搜尋（優先：完全相等 > 包含 > 最短包含） ------------------ */
+function findStation(keyword){
+  const k = (keyword||"").trim();
+  if(!k) return null;
+
+  // exact
+  if(stationByName.has(k)) return stationByName.get(k);
+
+  // includes
+  const hits = [];
+  for(const s of STATIONS){
+    if(s.name.includes(k)) hits.push(s);
+  }
+  if(hits.length===0) return null;
+
+  // choose shortest name that includes keyword
+  hits.sort((a,b)=>a.name.length-b.name.length);
+  return hits[0];
+}
+
+/* ------------------ A1 計算：逐小時累加固定變化量 + 調度 ------------------
+   在站(5)=v5
+   在站(h)=在站(h-1)+delta[h] + 調度(若該時段)
+   調度定義：
+     - 10–15 調度：套用在 10,11,12,13,14,15 這些小時（每小時 +d1015）
+     - 21–24 調度：套用在 21,22,23 這些小時（每小時 +d2124）
+*/
+function computeSeries(station, v5, d1015, d2124){
+  const cap = station.cap || 0;
   const hours = [];
   const values = [];
+  let cur = v5;
 
-  for (let h=5; h<=23; h++) {
-    if (h>=6) cur += (hourlyDelta[h] || 0);
-    if (h>=10 && h<=15) cur += adj1015;
-    if (h>=21) cur += adj2124;
+  for(let h=5; h<=23; h++){
+    if(h===5){
+      // keep cur
+    }else{
+      const delta = (station.deltas && station.deltas[String(h)]) ? Number(station.deltas[String(h)]) : 0;
+      cur += delta;
+    }
+    if(h>=10 && h<=15) cur += d1015;
+    if(h>=21 && h<=23) cur += d2124;
 
     hours.push(h);
     values.push(cur);
   }
-
-  const ok = values.every(v => v>=0 && v<=cap);
-  return {hours, values, ok};
+  return {hours, values, cap};
 }
 
-function recalc() {
-  const cap = +document.getElementById("capacity").value;
-  const v5 = +document.getElementById("v5").value;
-  const a1015 = +document.getElementById("adj1015").value;
-  const a2124 = +document.getElementById("adj2124").value;
+/* ------------------ UI / Chart ------------------ */
+let chart = null;
 
-  const {hours, values} = compute(v5, a1015, a2124, cap);
-
-  /* 表格 */
+function renderTable(hours, values, cap){
   const tb = document.getElementById("tbody");
   tb.innerHTML = "";
-  values.forEach((v,i)=>{
+  for(let i=0;i<hours.length;i++){
     const tr = document.createElement("tr");
-    if (v<0 || v>cap) tr.className="over";
-    tr.innerHTML = `<td>${hours[i]}</td><td>${v}</td>`;
+    if(values[i] < 0 || values[i] > cap) tr.className = "warn";
+    tr.innerHTML = `<td>${hours[i]}</td><td>${values[i]}</td>`;
     tb.appendChild(tr);
-  });
+  }
+}
 
-  /* 摘要 */
-  const over = values.map((v,i)=>({h:hours[i],v})).filter(d=>d.v<0||d.v>cap);
-  let txt = `5 點配置 <b>${v5}</b> 輛，10–15 調度 <b>${a1015}</b>，21–24 調度 <b>${a2124}</b>。<br>`;
-  if (over.length===0) {
-    txt += `全日 <b>無超限</b>，皆介於 0–${cap} 輛。`;
-  } else {
+function renderSummary(v5, d1015, d2124, hours, values, cap){
+  const over = values.map((v,i)=>({h:hours[i],v})).filter(o=>o.v<0 || o.v>cap);
+  let html = `5 點配置 <b>${v5}</b> 輛，10–15 調度 <b>${d1015}</b>，21–24 調度 <b>${d2124}</b>。<br>`;
+  if(over.length===0){
+    html += `全日 <b>無超限</b>，皆介於 0–${cap}。`;
+  }else{
     const min = over.reduce((a,b)=>a.v<b.v?a:b);
     const max = over.reduce((a,b)=>a.v>b.v?a:b);
-    txt += `超限 ${over[0].h}–${over[over.length-1].h} 點，最低 ${min.v}（${min.h} 點）、最高 ${max.v}（${max.h} 點）。`;
+    html += `超限 ${over[0].h}–${over[over.length-1].h} 點，最低 ${min.v}（${min.h} 點）、最高 ${max.v}（${max.h} 點）。`;
   }
-  document.getElementById("summary").innerHTML = txt;
+  document.getElementById("summary").innerHTML = html;
 
-  /* 圖表 */
-  if (chart) chart.destroy();
-  chart = new Chart(document.getElementById("chart"), {
-    type:"line",
-    data:{
-      labels:hours,
-      datasets:[
-        {label:station.value,data:values,borderColor:"green",tension:0.3},
-        {label:"車位上限",data:hours.map(()=>cap),borderColor:"red",borderDash:[5,5]},
-        {label:"0",data:hours.map(()=>0),borderColor:"orange"}
+  // 說明（固定變化量 A1）：每小時在站 = 前一小時在站 + 該小時變化量 +（若在調度時段則加調度量）。
+  document.getElementById("summary").innerHTML += `<br><span style="color:#57606a;font-size:12px">說明：本工具採 A1 固定每小時變化量（不隨 5 點配置縮放）；輸入站名會自動模糊比對並回填責任區/車位。若出現超限，紅字為該小時的實際值（仍對齊 X 軸點）。</span>`;
+}
+
+/* 超限標記：只標超出上下限的點；每個點都對齊 X；避免右側與彼此重疊（碰撞避讓） */
+function makeOverLimitLabelPlugin(getSeries){
+  return {
+    id: "overLimitLabel",
+    afterDatasetsDraw(c){
+      const series = getSeries();
+      if(!series) return;
+      const {hours, values, cap} = series;
+
+      const meta = c.getDatasetMeta(0);
+      if(!meta || !meta.data) return;
+
+      const ctx = c.ctx;
+      ctx.save();
+      ctx.fillStyle = "red";
+      ctx.textAlign = "right";      // 文字在點的左側
+      ctx.textBaseline = "bottom";
+      ctx.font = "bold 16px Arial";
+
+      // 已放置標籤的位置（用來做碰撞避讓）
+      const placed = []; // {x,y}
+
+      const n = hours.length;
+      const rightOffsets = new Map([
+        [n-1, 22], // 23點
+        [n-2, 18], // 22點
+        [n-3, 14], // 21點
+        [n-4, 10]  // 20點
+      ]);
+
+      const minGap = 16; // 垂直間距（px）
+      const collide = (x,y) => placed.some(p => Math.abs(p.x - x) < 10 && Math.abs(p.y - y) < minGap);
+
+      for(let i=0;i<n;i++){
+        const v = values[i];
+        if(!(v < 0 || v > cap)) continue;
+
+        const p = meta.data[i];
+        if(!p) continue;
+
+        const offX = rightOffsets.get(i) || 12;
+        let x = p.x - offX;     // 左側一點
+        let y = p.y - 6;        // 上方一點（預設）
+
+        // 碰撞避讓：只改 y，不改 x，確保仍對齊該小時的 X 軸點
+        // 若與其他標籤太近，往下排開
+        while(collide(x,y)){
+          y += minGap;
+        }
+
+        ctx.fillText(String(v), x, y);
+        placed.push({x,y});
+      }
+      ctx.restore();
+    }
+  };
+}
+
+function renderChart(stationName, hours, values, cap){
+  const ctx = document.getElementById("chart").getContext("2d");
+
+  if(chart) chart.destroy();
+
+  const upper = hours.map(()=>cap);
+  const zero  = hours.map(()=>0);
+
+  let currentSeries = {hours, values, cap};
+
+  chart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: hours,
+      datasets: [
+        { label: stationName, data: values, borderColor: "green", tension: 0.25, pointRadius: 3, pointHoverRadius: 3 },
+        { label: "車位上限", data: upper, borderColor: "red", borderDash: [6,6], tension: 0, pointRadius: 2 },
+        { label: "0", data: zero, borderColor: "orange", tension: 0, pointRadius: 2 }
       ]
     },
-    options:{
-      animation:false,
-      scales:{y:{min:-cap*2,max:cap*2}},
-      plugins:{tooltip:{enabled:false}}
-    },
-    plugins:[{
-      afterDatasetsDraw(c){
-        const ctx=c.ctx;
-        ctx.fillStyle="red";
-        ctx.font="bold 13px Arial";
-        c.getDatasetMeta(0).data.forEach((p,i)=>{
-          ctx.fillText(values[i],p.x-10,p.y-8);
-        });
+    options: {
+      animation: false,
+      plugins: { tooltip: { enabled: false } },
+      scales: {
+        y: { min: -cap*2, max: cap*2 }
       }
-    }]
+    },
+    plugins: [makeOverLimitLabelPlugin(()=>currentSeries)]
   });
 }
 
-/* === 一鍵最佳解（優先不調度） === */
-function solveBest() {
-  const cap = +document.getElementById("capacity").value;
-  document.getElementById("adj1015").value = 0;
-  document.getElementById("adj2124").value = 0;
+/* ------------------ 主更新 ------------------ */
+function updateAll(){
+  const keyword = document.getElementById("stationInput").value;
+  const station = findStation(keyword);
 
-  for (let v=0; v<=cap; v++) {
-    const r = compute(v,0,0,cap);
-    if (r.ok) {
-      document.getElementById("v5").value = v;
-      recalc();
-      alert("最佳解：5 點配置 = "+v+" 輛（無需調度）");
+  if(!station){
+    document.getElementById("areaInput").value = "";
+    document.getElementById("capInput").value = "";
+    document.getElementById("summary").textContent = "找不到場站，請輸入更完整的站名（支援模糊搜尋）。";
+    document.getElementById("tbody").innerHTML = "";
+    if(chart){ chart.destroy(); chart=null; }
+    return;
+  }
+
+  document.getElementById("stationInput").value = station.name; // 自動修正為完整站名
+  document.getElementById("areaInput").value = station.area;
+  document.getElementById("capInput").value = station.cap;
+
+  const v5 = Number(document.getElementById("v5Input").value || 0);
+  const d1015 = Number(document.getElementById("d1015Input").value || 0);
+  const d2124 = Number(document.getElementById("d2124Input").value || 0);
+
+  const {hours, values, cap} = computeSeries(station, v5, d1015, d2124);
+
+  renderSummary(v5, d1015, d2124, hours, values, cap);
+  renderTable(hours, values, cap);
+  renderChart(station.name, hours, values, cap);
+}
+
+/* ------------------ 一鍵最佳解（優先：調度全為 0，只找 v5） ------------------ */
+function oneClickBest(){
+  const keyword = document.getElementById("stationInput").value;
+  const station = findStation(keyword);
+  if(!station){ alert("請先輸入可辨識的場站"); return; }
+
+  document.getElementById("d1015Input").value = 0;
+  document.getElementById("d2124Input").value = 0;
+
+  const cap = station.cap || 0;
+  for(let v5=0; v5<=cap; v5++){
+    const {values} = computeSeries(station, v5, 0, 0);
+    if(values.every(v=>v>=0 && v<=cap)){
+      document.getElementById("v5Input").value = v5;
+      updateAll();
       return;
     }
   }
-  alert("僅靠 5 點配置無法滿足，需搭配調度。");
+  alert("僅靠 5 點配置無法滿足 0～車位數，需搭配調度。");
 }
 
-recalc();
-</script>
+/* ------------------ 綁定事件 ------------------ */
+document.getElementById("btnUpdate").addEventListener("click", updateAll);
+document.getElementById("btnBest").addEventListener("click", oneClickBest);
 
+document.getElementById("stationInput").addEventListener("change", updateAll);
+document.getElementById("stationInput").addEventListener("input", ()=>{
+  // 即時模糊：輸入時先嘗試回填區/車位，但不強制更新圖
+  const s = findStation(document.getElementById("stationInput").value);
+  if(s){
+    document.getElementById("areaInput").value = s.area;
+    document.getElementById("capInput").value = s.cap;
+  }
+});
+
+["v5Input","d1015Input","d2124Input"].forEach(id=>{
+  document.getElementById(id).addEventListener("change", updateAll);
+});
+
+/* ------------------ 初始化 ------------------ */
+(async function init(){
+  try{
+    await loadDB();
+    // 預設選第一站避免空白
+    if(STATIONS.length>0){
+      document.getElementById("stationInput").value = STATIONS[0].name;
+      document.getElementById("areaInput").value = STATIONS[0].area;
+      document.getElementById("capInput").value = STATIONS[0].cap;
+    }
+    updateAll();
+  }catch(err){
+    document.getElementById("summary").textContent = String(err);
+  }
+})();
+</script>
 </body>
 </html>
