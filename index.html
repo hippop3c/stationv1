@@ -3,116 +3,48 @@
 <head>
 <meta charset="UTF-8" />
 <title>YouBike 每小時在站車輛數（最終穩定版）</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 <style>
-body {
-  font-family: "Segoe UI", "Noto Sans TC", sans-serif;
-  margin: 20px;
-}
-h1 { margin-bottom: 12px; }
-
-.panel {
-  border: 1px solid #cfd8e3;
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-}
-
-label { font-weight: 600; }
-input {
-  padding: 4px 6px;
-  min-width: 120px;
-}
-
-button {
-  padding: 6px 12px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.main {
-  display: flex;
-  gap: 12px;
-}
-
-.left {
-  flex: 2;
-}
-
-.right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.summary {
-  border-left: 5px solid #2e7d32;
-  background: #f4fbf6;
-  padding: 12px;
-  font-size: 18px;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 16px;
-}
-
-th, td {
-  border: 1px solid #ccc;
-  padding: 6px;
-  text-align: center;
-}
-
-tr.bad {
-  background: #fde2e2;
-}
-
-canvas {
-  height: 420px !important;
-}
+  body { font-family: Arial, "Microsoft JhengHei"; margin: 20px; }
+  h1 { margin-bottom: 10px; }
+  .box { border: 1px solid #cfd8e3; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  label { font-weight: bold; }
+  input { padding: 4px 6px; }
+  button { padding: 6px 10px; }
+  .main { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 16px; }
+  th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+  tr.bad { background: #fde2e2; }
+  .summary { font-size: 18px; font-weight: bold; background: #f3f8f3; padding: 8px; border-left: 5px solid #3a9a5b; margin-bottom: 8px; }
 </style>
 </head>
 
 <body>
 <h1>YouBike 每小時在站車輛數（最終穩定版）</h1>
 
-<div class="panel">
+<div class="box">
   <div class="row">
-    <label>場站</label><input id="stationInput">
-    <label>責任區</label><input id="areaInput" readonly>
-    <label>總車位</label><input id="capInput" readonly>
-    <label>5 點車輛數</label><input id="b5Input" type="number" value="0">
-    <label>10–15 調度</label><input id="d10Input" type="number" value="0">
-    <label>21–24 調度</label><input id="d21Input" type="number" value="0">
+    <label>場站</label><input id="station" size="14">
+    <label>責任區</label><input id="area" size="6" readonly>
+    <label>總車位</label><input id="cap" size="4" readonly>
+    <label>5 點車輛數</label><input id="base5" type="number" value="0">
+    <label>10–15 調度</label><input id="d10" type="number" value="0">
+    <label>21–24 調度</label><input id="d21" type="number" value="0">
+    <button onclick="render()">更新圖表</button>
   </div>
-  <div class="row" style="margin-top:8px;">
-    <button onclick="update()">更新圖表</button>
-    <button onclick="bestOnly()">最佳解（只配 5 點）</button>
-    <button onclick="autoSolve()">自動求解（最佳→次佳→最後）</button>
-  </div>
-  <div id="dbStatus" style="margin-top:6px;color:#555;"></div>
+  <div style="margin-top:6px;font-size:14px;">資料來源：default_db.json</div>
 </div>
 
 <div class="main">
-  <div class="left">
+  <div class="box">
     <canvas id="chart"></canvas>
   </div>
-  <div class="right">
-    <div class="summary" id="summary"></div>
+
+  <div class="box">
+    <div id="summary" class="summary"></div>
     <table>
-      <thead>
-        <tr><th>時間</th><th>在站</th></tr>
-      </thead>
+      <thead><tr><th>時間</th><th>在站</th></tr></thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
@@ -124,22 +56,24 @@ let chart;
 
 fetch("default_db.json")
   .then(r => r.json())
-  .then(d => {
-    DB = d;
-    document.getElementById("dbStatus").textContent =
-      `資料來源：default_db.json（${DB.length} 站）`;
-  });
+  .then(j => DB = j);
 
 function findStation(name) {
   return DB.find(s => s.station.includes(name));
 }
 
-function compute(cur, b5, d10, d21) {
-  let v = b5;
+/* ✅ 核心修正後的正確計算邏輯 */
+function compute(cur, base5, d10, d21) {
   let out = [];
+  let v = base5;
+
   for (let h = 5; h <= 23; h++) {
-    if (h !== 5) {
-      if (cur.deltas[h] !== undefined) v += cur.deltas[h];
+    if (h === 5) {
+      v = base5;
+    } else {
+      if (cur.deltas[h] !== undefined) {
+        v = v + cur.deltas[h]; // 只加「該小時」變化
+      }
       if (h === 10) v += d10;
       if (h === 21) v += d21;
     }
@@ -148,24 +82,44 @@ function compute(cur, b5, d10, d21) {
   return out;
 }
 
-function draw(cur, rows) {
-  const labels = rows.map(r => r.h);
-  const data = rows.map(r => r.v);
-  const cap = cur.capacity;
+function render() {
+  const name = station.value.trim();
+  const cur = findStation(name);
+  if (!cur) {
+    alert("找不到場站");
+    return;
+  }
 
-  const badCount = rows.filter(r => r.v < 0 || r.v > cap).length;
+  area.value = cur.area;
+  cap.value = cur.capacity;
 
-  document.getElementById("summary").textContent =
-    `超限 ${badCount} 小時｜限制 0–${cap}`;
+  const base5 = +base5Input.value || 0;
+  const d10v = +d10.value || 0;
+  const d21v = +d21.value || 0;
 
-  const tb = document.getElementById("tbody");
-  tb.innerHTML = "";
-  rows.forEach(r => {
+  const data = compute(cur, base5, d10v, d21v);
+
+  // 表格
+  let badHours = [];
+  tbody.innerHTML = "";
+  data.forEach(r => {
     const tr = document.createElement("tr");
-    if (r.v < 0 || r.v > cap) tr.className = "bad";
+    if (r.v < 0 || r.v > cur.capacity) {
+      tr.className = "bad";
+      badHours.push(r.h);
+    }
     tr.innerHTML = `<td>${r.h}</td><td>${r.v}</td>`;
-    tb.appendChild(tr);
+    tbody.appendChild(tr);
   });
+
+  summary.textContent =
+    badHours.length === 0
+      ? `5點=${base5}｜10–15=${d10v}｜21–24=${d21v}｜全日皆於 0–${cur.capacity}`
+      : `超限時段：${badHours.join(",")} 點`;
+
+  // 圖表
+  const labels = data.map(d => d.h);
+  const vals = data.map(d => d.v);
 
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById("chart"), {
@@ -173,65 +127,42 @@ function draw(cur, rows) {
     data: {
       labels,
       datasets: [
-        { label: cur.station, data, borderColor: "green", tension: 0.3 },
-        { label: "上限", data: labels.map(() => cap), borderColor: "red", borderDash:[5,5] },
-        { label: "0", data: labels.map(() => 0), borderColor: "orange" }
+        {
+          label: cur.station,
+          data: vals,
+          borderColor: "green",
+          tension: 0.3,
+          pointRadius: 3
+        },
+        {
+          label: "上限",
+          data: labels.map(_ => cur.capacity),
+          borderColor: "red",
+          borderDash: [5,5],
+          pointRadius: 0
+        },
+        {
+          label: "0",
+          data: labels.map(_ => 0),
+          borderColor: "orange",
+          pointRadius: 0
+        }
       ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: {
+          min: -cur.capacity * 2,
+          max: cur.capacity * 2
+        }
+      }
     }
   });
 }
 
-function update() {
-  const cur = findStation(stationInput.value);
-  if (!cur) return;
-  areaInput.value = cur.area;
-  capInput.value = cur.capacity;
-  const rows = compute(
-    cur,
-    +b5Input.value,
-    +d10Input.value,
-    +d21Input.value
-  );
-  draw(cur, rows);
-}
-
-function bestOnly() {
-  const cur = findStation(stationInput.value);
-  if (!cur) return;
-  let best = null;
-  for (let b = 0; b <= cur.capacity; b++) {
-    const r = compute(cur, b, 0, 0);
-    const bad = r.filter(x => x.v < 0 || x.v > cur.capacity).length;
-    if (!best || bad < best.bad) best = { b, bad, r };
-    if (bad === 0) break;
-  }
-  b5Input.value = best.b;
-  d10Input.value = 0;
-  d21Input.value = 0;
-  draw(cur, best.r);
-}
-
-function autoSolve() {
-  const cur = findStation(stationInput.value);
-  if (!cur) return;
-  let best = null;
-  for (let b = 0; b <= cur.capacity; b++) {
-    for (let d10 = -50; d10 <= 50; d10 += 5) {
-      for (let d21 = -50; d21 <= 50; d21 += 5) {
-        const r = compute(cur, b, d10, d21);
-        const bad = r.filter(x => x.v < 0 || x.v > cur.capacity).length;
-        if (!best || bad < best.bad) {
-          best = { b, d10, d21, bad, r };
-        }
-        if (bad === 0) break;
-      }
-    }
-  }
-  b5Input.value = best.b;
-  d10Input.value = best.d10;
-  d21Input.value = best.d21;
-  draw(cur, best.r);
-}
+// 綁定 input
+const base5Input = document.getElementById("base5");
 </script>
 </body>
 </html>
