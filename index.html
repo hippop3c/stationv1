@@ -1,192 +1,148 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<title>YouBike 每小時在站車輛數</title>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
+<meta charset="UTF-8" />
+<title>YouBike 每小時在站車輛數（最終版）</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-body { font-family:"Microsoft JhengHei", Arial; margin:20px; }
-.section { border:1px solid #ccc; border-radius:8px; padding:14px; margin-bottom:14px; }
-.row { display:flex; gap:24px; }
-.left { flex:2; }
-.right { flex:1; }
-label { display:inline-block; width:160px; }
-input { padding:6px; margin:4px 0; }
-button { padding:8px 14px; margin:8px 6px 0 0; }
-canvas { max-height:460px; }
-table { border-collapse:collapse; width:100%; }
-th,td { border:1px solid #ccc; padding:6px; text-align:center; }
-.over { background:#f8d7da; }
-.big { font-size:22px; font-weight:bold; }
+  body { font-family: Arial, "Noto Sans TC", sans-serif; }
+  .row { display: flex; gap: 24px; }
+  .box { border: 1px solid #ccc; padding: 16px; border-radius: 6px; }
+  label { display: inline-block; width: 120px; }
+  input { width: 100px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+  th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: center; }
+  tr.over { background: #fde0e0; }
+  .summary {
+    background: #f6f8fa;
+    border-left: 4px solid #4caf50;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
 </style>
 </head>
-
 <body>
 
-<h2>YouBike 每小時在站車輛數（穩定最終版）</h2>
+<h2>YouBike 每小時在站車輛數（最終版）</h2>
 
-<div class="section">
-<b>資料來源：</b> <span id="dataSource">載入中…</span><br><br>
-<input type="file" id="fileInput" accept=".xlsx">
+<div class="box">
+  <div>
+    <label>場站</label><input id="station" value="捷運科技大樓站">
+    <label>責任區</label><input id="area" value="ZJ2">
+    <label>總車位</label><input id="capacity" type="number" value="28">
+  </div>
+  <div style="margin-top:8px">
+    <label>5 點車輛數</label><input id="v5" type="number" value="0">
+    <label>10–15 調度</label><input id="adj1015" type="number" value="0">
+    <label>21–24 調度</label><input id="adj2124" type="number" value="0">
+    <button onclick="recalc()">更新圖表</button>
+  </div>
 </div>
 
-<div class="section">
-<label>場站</label><input list="stations" id="station"><br>
-<label>責任區</label><input id="area" readonly><br>
-<label>5 點車輛數</label><input type="number" id="init" value="0"><br>
-<label>10–15 點調度</label><input type="number" id="dispatch15" value="0"><br>
-<label>21–24 點調度</label><input type="number" id="dispatch21" value="0"><br>
-<div>總車位數：<span id="capacity" class="big">–</span></div>
+<br>
 
-<button onclick="solveOptimal()">一鍵產出最佳解</button>
-<button onclick="refresh()">更新圖表</button>
-</div>
+<div class="row">
+  <div class="box" style="flex:2">
+    <canvas id="chart" height="320"></canvas>
+  </div>
+  <div class="box" style="flex:1">
+    <!-- ✅ 摘要文字 -->
+    <div id="summary" class="summary"></div>
 
-<datalist id="stations"></datalist>
-
-<div class="section row">
-  <div class="left"><canvas id="chart"></canvas></div>
-  <div class="right"><div id="dataTable"></div></div>
+    <table id="tbl">
+      <thead><tr><th>時間</th><th>在站</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
-let DB = [], chart = null;
-let overflowRawData = [];
+let chart;
 
-const HOURS = [5, ...Array.from({length:18},(_,i)=>i+6)];
+function recalc() {
+  const cap = +capacity.value;
+  const v5 = +v5.value;
+  const adj1015 = +adj1015.value;
+  const adj2124 = +adj2124.value;
 
-/* ===== 超限紅字 Plugin（右側錯開） ===== */
-Chart.register({
-  id: 'overflowLabel',
-  afterDatasetsDraw(chart) {
-    const ctx = chart.ctx;
-    const cap = Number(capacity.textContent);
-    if (!overflowRawData || isNaN(cap)) return;
+  const hours = [];
+  const values = [];
+  let cur = v5;
 
-    ctx.save();
-    ctx.fillStyle = "red";
-    ctx.font = "16px Microsoft JhengHei";
-    ctx.textAlign = "right";
-
-    let stack = 0;
-
-    overflowRawData.forEach((v,i)=>{
-      if(v>cap || v<0){
-        const rawX = chart.scales.x.getPixelForValue(HOURS[i]);
-        const x = Math.min(chart.chartArea.right-6, rawX-6);
-        let y = chart.scales.y.getPixelForValue(v);
-        if(rawX > chart.chartArea.right-80){
-          y += stack*14;
-          stack++;
-        }
-        ctx.fillText(v, x, y);
-      }
-    });
-    ctx.restore();
+  for (let h = 5; h <= 23; h++) {
+    hours.push(h);
+    if (h >= 10 && h <= 15) cur += adj1015;
+    if (h >= 21) cur += adj2124;
+    values.push(cur);
   }
-});
 
-/* ===== 載入 JSON ===== */
-fetch("./default_db.json")
-.then(r=>r.json())
-.then(data=>{
-  DB = data;
-  stations.innerHTML = DB.map(d=>`<option value="${d.station}">`).join("");
-  dataSource.textContent = `預設 JSON（${DB.length} 站）`;
-  station.value = DB[0].station;
-  refresh();
-});
+  /* ===== 表格 ===== */
+  const tb = document.querySelector("#tbl tbody");
+  tb.innerHTML = "";
+  values.forEach((v,i)=>{
+    const tr = document.createElement("tr");
+    if (v < 0 || v > cap) tr.className = "over";
+    tr.innerHTML = `<td>${hours[i]}</td><td>${v}</td>`;
+    tb.appendChild(tr);
+  });
 
-/* ===== Excel 覆蓋 ===== */
-fileInput.onchange = e=>{
-  const f=e.target.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=ev=>{
-    const wb=XLSX.read(ev.target.result,{type:"array"});
-    const rows=XLSX.utils.sheet_to_json(wb.Sheets["每小時變化"]);
-    DB=rows.map(r=>({
-      station:r["場站"],
-      area:r["責任區"],
-      capacity:+r["總車位數"],
-      deltas:Object.fromEntries(Array.from({length:18},(_,i)=>[i+6,+r[i+6]]))
-    }));
-    stations.innerHTML=DB.map(d=>`<option value="${d.station}">`).join("");
-    dataSource.textContent=`Excel（${DB.length} 站）`;
-    station.value=DB[0].station;
-    refresh();
-  };
-  r.readAsArrayBuffer(f);
-};
+  /* ===== 摘要 ===== */
+  const over = values
+    .map((v,i)=>({h:hours[i],v}))
+    .filter(d=>d.v<0 || d.v>cap);
 
-/* ===== 計算 ===== */
-function compute(rec, base, d15, d21){
-  const arr=[base];
-  for(let h=6;h<=23;h++){
-    let v=base+rec.deltas[h];
-    if(h>=15) v+=d15;
-    if(h>=21) v+=d21;
-    arr.push(v);
+  let summaryText = `本站 5 點配置 <b>${v5}</b> 輛，`;
+  summaryText += `10–15 點調度 <b>${adj1015}</b> 輛、`;
+  summaryText += `21–24 點調度 <b>${adj2124}</b> 輛。<br>`;
+
+  if (over.length === 0) {
+    summaryText += `全日 <b>無超限時段</b>，車輛皆介於 <b>0–${cap}</b> 輛之間。`;
+  } else {
+    const min = over.reduce((a,b)=>a.v<b.v?a:b);
+    const max = over.reduce((a,b)=>a.v>b.v?a:b);
+    summaryText += `於 <b>${over[0].h}–${over[over.length-1].h} 點</b> 出現超限，`;
+    summaryText += `最低 <b>${min.v}</b>（${min.h} 點）、`;
+    summaryText += `最高 <b>${max.v}</b>（${max.h} 點）。`;
   }
-  return arr;
-}
+  document.getElementById("summary").innerHTML = summaryText;
 
-/* ===== 更新 ===== */
-function refresh(){
-  const rec=DB.find(d=>d.station===station.value);
-  if(!rec) return;
+  /* ===== 圖表 ===== */
+  const ymax = cap * 2;
+  const ymin = -cap * 2;
 
-  area.value=rec.area;
-  capacity.textContent=rec.capacity;
-
-  const data=compute(rec,+init.value||0,+dispatch15.value||0,+dispatch21.value||0);
-  overflowRawData=data.slice();
-  drawChart(rec,data);
-  drawTable(data,rec.capacity);
-}
-
-/* ===== 圖表 ===== */
-function drawChart(rec,data){
-  if(chart) chart.destroy();
-  const cap=rec.capacity, limit=cap*2;
-
-  chart=new Chart(document.getElementById("chart"),{
-    type:"line",
-    data:{
-      labels:HOURS,
-      datasets:[
-        {label:rec.station,data:data,borderColor:"green",tension:0.35},
-        {label:"車位上限",data:HOURS.map(()=>cap),borderColor:"red",borderDash:[6,6]},
-        {label:"0",data:HOURS.map(()=>0),borderColor:"orange"}
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: {
+      labels: hours,
+      datasets: [
+        { label: station.value, data: values, borderColor: "green", tension: 0.3 },
+        { label: "車位上限", data: hours.map(()=>cap), borderColor: "red", borderDash: [5,5] },
+        { label: "0", data: hours.map(()=>0), borderColor: "orange" }
       ]
     },
-    options:{scales:{y:{min:-limit,max:limit}}}
+    options: {
+      animation: false,
+      scales: { y: { min: ymin, max: ymax } },
+      plugins: { tooltip: { enabled: false } }
+    },
+    plugins: [{
+      id: "labels",
+      afterDatasetsDraw(chart) {
+        const ctx = chart.ctx;
+        ctx.fillStyle = "red";
+        ctx.font = "bold 13px Arial";
+        chart.getDatasetMeta(0).data.forEach((p,i)=>{
+          ctx.fillText(values[i], p.x - 10, p.y - 8);
+        });
+      }
+    }]
   });
 }
 
-/* ===== 表格 ===== */
-function drawTable(data,cap){
-  let h="<table><tr><th>時間</th><th>在站</th></tr>";
-  data.forEach((v,i)=>{
-    h+=`<tr class="${v<=0||v>=cap?'over':''}"><td>${HOURS[i]}</td><td>${v}</td></tr>`;
-  });
-  dataTable.innerHTML=h+"</table>";
-}
-
-/* ===== 最佳解 ===== */
-function solveOptimal(){
-  const rec=DB.find(d=>d.station===station.value);
-  for(let b=1;b<rec.capacity;b++){
-    const a=compute(rec,b,0,0);
-    if(a.every(v=>v>0&&v<rec.capacity)){
-      init.value=b; dispatch15.value=0; dispatch21.value=0;
-      refresh(); return;
-    }
-  }
-  alert("無零調度最佳解");
-}
+recalc();
 </script>
 
 </body>
