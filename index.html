@@ -1,204 +1,278 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<title>YouBike 每小時在站車輛數（最終版）</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<meta charset="UTF-8" />
+<title>YouBike 每小時在站車輛數（最終穩定版）</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <style>
-body{font-family:Arial,"Noto Sans TC",sans-serif;margin:20px}
-h1{margin-bottom:12px}
-.panel{border:1px solid #d0d7de;border-radius:8px;padding:12px;margin-bottom:12px}
-.grid{display:grid;grid-template-columns:120px 220px 120px 220px 120px 160px auto;gap:8px;align-items:center}
-input{padding:6px 8px;border:1px solid #d0d7de;border-radius:6px}
-input[type=number]{width:120px}
-button{padding:8px 12px;border:1px solid #6e7781;border-radius:6px;background:#f6f8fa;cursor:pointer}
-button:hover{background:#eef1f4}
-.row{display:flex;gap:12px}
-.left{flex:2}
-.right{flex:1}
-.summary{background:#f6f8fa;border-left:4px solid #2da44e;padding:10px;margin-bottom:10px;line-height:1.6;border-radius:6px}
-table{width:100%;border-collapse:collapse}
-th,td{border:1px solid #d0d7de;padding:6px;text-align:center}
-tr.warn{background:#fde0e0}
-.small{font-size:12px;color:#57606a}
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin: 20px;
+}
+
+h1 {
+  margin-bottom: 12px;
+}
+
+/* ===== 控制區 ===== */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+.controls label {
+  min-width: 80px;
+}
+
+.controls input {
+  width: 160px;
+  padding: 4px 6px;
+}
+
+.controls button {
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+/* ===== 主畫面 ===== */
+.main {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+/* ===== 摘要 ===== */
+.summary {
+  background: #f7f9fb;
+  border-left: 4px solid #2e7d32;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+
+/* ===== 表格 ===== */
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th, td {
+  border: 1px solid #ccc;
+  padding: 4px 6px;
+  text-align: center;
+}
+
+tr.bad {
+  background: #fde2e2;
+}
 </style>
 </head>
+
 <body>
+<h1>YouBike 每小時在站車輛數（最終穩定版）</h1>
 
-<h1>YouBike 每小時在站車輛數（最終版）</h1>
+<div class="controls">
+  <label>場站</label>
+  <input id="stationInput" />
 
-<div class="panel">
-  <div class="grid">
-    <label>場站</label><input id="stationInput" placeholder="可輸入部分站名">
-    <label>責任區</label><input id="areaInput" readonly>
-    <label>總車位</label><input id="capInput" readonly>
+  <label>責任區</label>
+  <input id="areaInput" disabled />
 
-    <label>5 點車輛數</label><input id="v5" type="number" value="0">
-    <label>10–15 調度</label><input id="d1015" type="number" value="0">
-    <label>21–24 調度</label><input id="d2124" type="number" value="0">
+  <label>總車位</label>
+  <input id="capInput" disabled />
 
-    <button onclick="updateAll()">更新圖表</button>
-    <button onclick="best()">一鍵產出最佳解</button>
-  </div>
-  <div id="srcInfo" class="small">資料載入中…</div>
+  <label>5 點車輛數</label>
+  <input id="v5" type="number" value="0" />
+
+  <label>10–15 調度</label>
+  <input id="d1015" type="number" value="0" />
+
+  <label>21–24 調度</label>
+  <input id="d2124" type="number" value="0" />
+
+  <button onclick="update()">更新圖表</button>
+  <button onclick="best()">一鍵產出最佳解</button>
 </div>
 
-<div class="row">
-  <div class="panel left"><canvas id="chart" height="320"></canvas></div>
-  <div class="panel right">
-    <div id="summary" class="summary"></div>
+<div class="main">
+  <div>
+    <canvas id="chart" height="160"></canvas>
+  </div>
+
+  <div>
+    <div id="summary" class="summary">請輸入場站</div>
     <table>
-      <thead><tr><th>時間</th><th>在站</th></tr></thead>
+      <thead>
+        <tr><th>時間</th><th>在站</th></tr>
+      </thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
 </div>
 
 <script>
-let STATIONS=[];
+let DB = [];
 let chart;
 
-/* === 載入 JSON（完全相容你現在的結構） === */
-async function loadDB(){
-  const res=await fetch("default_db.json?"+Date.now());
-  const data=await res.json();
-  STATIONS = Array.isArray(data)? data : [];
-  document.getElementById("srcInfo").textContent =
-    `資料來源：default_db.json（${STATIONS.length} 站）`;
+/* ===== 載入 JSON ===== */
+fetch("default_db.json")
+  .then(r => r.json())
+  .then(j => DB = j);
+
+/* ===== 模糊搜尋 ===== */
+function findStation(name) {
+  return DB.find(s => s.station.includes(name));
 }
 
-/* === 模糊搜尋 === */
-function findStation(key){
-  key=key.trim();
-  if(!key) return null;
-  return STATIONS.find(s=>s.station.includes(key)) || null;
-}
+/* ===== 核心計算（正確版） ===== */
+function calc(st, v5, d1015, d2124) {
+  const hours = [];
+  const vals = [];
 
-/* === A1 計算邏輯（第一版） === */
-function calc(st,v5,d1015,d2124){
-  let cur=v5;
-  const hours=[],vals=[];
-  for(let h=5;h<=23;h++){
-    if(h!==5) cur += (st.deltas[String(h)]||0);
-    if(h>=10&&h<=15) cur+=d1015;
-    if(h>=21&&h<=23) cur+=d2124;
-    hours.push(h); vals.push(cur);
-  }
-  return {hours,vals};
-}
+  for (let h = 5; h <= 23; h++) {
+    let v = v5;
 
-/* === 排版修正 plugin（只動這裡） === */
-function overLimitLabelPlugin(series){
-  return {
-    id:"overLimitLabel",
-    afterDatasetsDraw(c){
-      const {hours,vals,cap}=series;
-      const meta=c.getDatasetMeta(0);
-      const ctx=c.ctx;
-      ctx.save();
-      ctx.fillStyle="red";
-      ctx.font="bold 16px Arial";
-      ctx.textAlign="right";
-      ctx.textBaseline="middle";
-
-      const used={};
-      for(let i=0;i<hours.length;i++){
-        const v=vals[i];
-        if(v>=0&&v<=cap) continue;
-        const p=meta.data[i];
-        let x=p.x-12;
-        if(i>=hours.length-1) x-=18;
-        else if(i===hours.length-2) x-=14;
-        else if(i===hours.length-3) x-=10;
-
-        let y=p.y;
-        const k=Math.round(p.x);
-        used[k]=used[k]||[];
-        while(used[k].some(u=>Math.abs(u-y)<16)) y+=16;
-        used[k].push(y);
-        ctx.fillText(v,x,y);
-      }
-      ctx.restore();
+    if (h !== 5 && st.deltas[String(h)] !== undefined) {
+      v += st.deltas[String(h)];
     }
-  };
+
+    if (h >= 10 && h <= 15) v += d1015;
+    if (h >= 21 && h <= 23) v += d2124;
+
+    hours.push(h);
+    vals.push(v);
+  }
+  return { hours, vals };
 }
 
-/* === 更新全部 === */
-function updateAll(){
-  const key=stationInput.value;
-  const st=findStation(key);
-  if(!st){
-    summary.textContent="找不到場站，請輸入更完整站名。";
-    tbody.innerHTML="";
-    if(chart) chart.destroy();
+/* ===== 更新 ===== */
+function update() {
+  const name = stationInput.value.trim();
+  const st = findStation(name);
+
+  if (!st) {
+    summary.innerText = "找不到場站，請輸入更完整站名（支援模糊搜尋）";
     return;
   }
-  stationInput.value=st.station;
-  areaInput.value=st.area;
-  capInput.value=st.capacity;
 
-  const v5n=+v5.value, d10=+d1015.value, d21=+d2124.value;
-  const {hours,vals}=calc(st,v5n,d10,d21);
+  areaInput.value = st.area;
+  capInput.value = st.capacity;
 
-  // summary
-  const over=vals.map((v,i)=>({h:hours[i],v})).filter(o=>o.v<0||o.v>st.capacity);
-  summary.innerHTML =
-    over.length===0
-    ? `5 點配置 ${v5n} 輛，全天皆介於 0–${st.capacity}。`
-    : `5 點配置 ${v5n} 輛，超限 ${over[0].h}–${over.at(-1).h} 點，
-       最低 ${Math.min(...over.map(o=>o.v))}，
-       最高 ${Math.max(...over.map(o=>o.v))}。`;
+  const v5n = Number(v5.value);
+  const d1015n = Number(d1015.value);
+  const d2124n = Number(d2124.value);
 
-  // table
-  tbody.innerHTML="";
-  hours.forEach((h,i)=>{
-    const tr=document.createElement("tr");
-    if(vals[i]<0||vals[i]>st.capacity) tr.className="warn";
-    tr.innerHTML=`<td>${h}</td><td>${vals[i]}</td>`;
-    tbody.appendChild(tr);
-  });
+  const { hours, vals } = calc(st, v5n, d1015n, d2124n);
 
-  // chart
-  if(chart) chart.destroy();
-  chart=new Chart(chartCtx,{
-    type:"line",
-    data:{
-      labels:hours,
-      datasets:[
-        {label:st.station,data:vals,borderColor:"green",tension:.25,pointRadius:3},
-        {label:"車位上限",data:hours.map(()=>st.capacity),borderColor:"red",borderDash:[6,6],pointRadius:2},
-        {label:"0",data:hours.map(()=>0),borderColor:"orange",pointRadius:2}
+  renderChart(st, hours, vals);
+  renderTable(st, hours, vals);
+  renderSummary(st, v5n, d1015n, d2124n, vals);
+}
+
+/* ===== 圖 ===== */
+function renderChart(st, hours, vals) {
+  const cap = st.capacity;
+  const up = Array(hours.length).fill(cap);
+  const low = Array(hours.length).fill(0);
+
+  if (chart) chart.destroy();
+
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: {
+      labels: hours,
+      datasets: [
+        {
+          label: st.station,
+          data: vals,
+          borderColor: "green",
+          tension: 0.3,
+          pointRadius: 3
+        },
+        {
+          label: "車位上限",
+          data: up,
+          borderColor: "red",
+          borderDash: [6,4],
+          pointRadius: 0
+        },
+        {
+          label: "0",
+          data: low,
+          borderColor: "orange",
+          pointRadius: 0
+        }
       ]
     },
-    options:{animation:false,plugins:{tooltip:{enabled:false}},
-      scales:{y:{min:-st.capacity*2,max:st.capacity*2}}},
-    plugins:[overLimitLabelPlugin({hours,vals,cap:st.capacity})]
+    options: {
+      plugins: {
+        legend: { position: "top" },
+        tooltip: { enabled: true }
+      },
+      scales: {
+        y: {
+          min: Math.min(...vals, 0) - 5,
+          max: Math.max(...vals, cap) + 5
+        }
+      }
+    }
   });
 }
 
-/* === 最佳解（第一版邏輯） === */
-function best(){
-  const st=findStation(stationInput.value);
-  if(!st) return alert("請先輸入場站");
-  d1015.value=0; d2124.value=0;
-  for(let v=0;v<=st.capacity;v++){
-    if(calc(st,v,0,0).vals.every(x=>x>=0&&x<=st.capacity)){
-      v5.value=v; updateAll(); return;
-    }
-  }
-  alert("需搭配調度，僅靠 5 點配置無解");
+/* ===== 表格 ===== */
+function renderTable(st, hours, vals) {
+  tbody.innerHTML = "";
+  hours.forEach((h, i) => {
+    const tr = document.createElement("tr");
+    if (vals[i] < 0 || vals[i] > st.capacity) tr.className = "bad";
+    tr.innerHTML = `<td>${h}</td><td>${vals[i]}</td>`;
+    tbody.appendChild(tr);
+  });
 }
 
-const chartCtx=document.getElementById("chart").getContext("2d");
+/* ===== 摘要 ===== */
+function renderSummary(st, v5n, d1015n, d2124n, vals) {
+  const bad = vals
+    .map((v,i)=>({v,i}))
+    .filter(x => x.v < 0 || x.v > st.capacity);
 
-/* === init === */
-(async()=>{
-  await loadDB();
-  if(STATIONS.length){
-    stationInput.value=STATIONS[0].station;
-    updateAll();
+  if (bad.length === 0) {
+    summary.innerText =
+      `5 點配置 ${v5n} 輛，10–15 調度 ${d1015n}，21–24 調度 ${d2124n}。\n全日無超限，皆介於 0–${st.capacity}。`;
+  } else {
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    summary.innerText =
+      `5 點配置 ${v5n} 輛，10–15 調度 ${d1015n}，21–24 調度 ${d2124n}。\n超限 ${bad[0].i+5}–${bad.at(-1).i+5} 點，最低 ${min}，最高 ${max}。`;
   }
-})();
+}
+
+/* ===== 最佳解 ===== */
+function best() {
+  const name = stationInput.value.trim();
+  const st = findStation(name);
+  if (!st) return;
+
+  for (let v = 0; v <= st.capacity; v++) {
+    const { vals } = calc(st, v, 0, 0);
+    if (vals.every(x => x >= 0 && x <= st.capacity)) {
+      v5.value = v;
+      d1015.value = 0;
+      d2124.value = 0;
+      update();
+      return;
+    }
+  }
+  alert("找不到最佳解");
+}
 </script>
 </body>
 </html>
