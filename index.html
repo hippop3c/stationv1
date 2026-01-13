@@ -1,26 +1,20 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8">
 <title>YouBike 每小時在站車輛數（最終版）</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-  body { font-family: Arial, "Noto Sans TC", sans-serif; }
-  .row { display: flex; gap: 24px; }
-  .box { border: 1px solid #ccc; padding: 16px; border-radius: 6px; }
-  label { display: inline-block; width: 120px; }
-  input { width: 100px; }
-  table { border-collapse: collapse; width: 100%; margin-top: 8px; }
-  th, td { border: 1px solid #ccc; padding: 4px 8px; text-align: center; }
-  tr.over { background: #fde0e0; }
-  .summary {
-    background: #f6f8fa;
-    border-left: 4px solid #4caf50;
-    padding: 8px 12px;
-    margin-bottom: 8px;
-    font-size: 14px;
-    line-height: 1.6;
-  }
+body { font-family: Arial, "Noto Sans TC", sans-serif; }
+.box { border:1px solid #ccc; padding:16px; border-radius:6px; margin-bottom:16px; }
+.row { display:flex; gap:20px; }
+label { display:inline-block; width:110px; }
+input { width:90px; }
+button { margin-left:8px; }
+table { border-collapse:collapse; width:100%; }
+th,td { border:1px solid #ccc; padding:4px 8px; text-align:center; }
+tr.over { background:#fde0e0; }
+.summary { background:#f6f8fa; border-left:4px solid #4caf50; padding:8px; margin-bottom:8px; }
 </style>
 </head>
 <body>
@@ -38,22 +32,19 @@
     <label>10–15 調度</label><input id="adj1015" type="number" value="0">
     <label>21–24 調度</label><input id="adj2124" type="number" value="0">
     <button onclick="recalc()">更新圖表</button>
+    <button onclick="solveBest()">一鍵產出最佳解</button>
   </div>
 </div>
-
-<br>
 
 <div class="row">
   <div class="box" style="flex:2">
     <canvas id="chart" height="320"></canvas>
   </div>
   <div class="box" style="flex:1">
-    <!-- ✅ 摘要文字 -->
     <div id="summary" class="summary"></div>
-
-    <table id="tbl">
+    <table>
       <thead><tr><th>時間</th><th>在站</th></tr></thead>
-      <tbody></tbody>
+      <tbody id="tbody"></tbody>
     </table>
   </div>
 </div>
@@ -61,85 +52,96 @@
 <script>
 let chart;
 
-function recalc() {
-  const cap = +capacity.value;
-  const v5 = +v5.value;
-  const adj1015 = +adj1015.value;
-  const adj2124 = +adj2124.value;
-
+function compute(v5Val, a1015, a2124, cap) {
+  let cur = v5Val;
   const hours = [];
   const values = [];
-  let cur = v5;
-
-  for (let h = 5; h <= 23; h++) {
+  for (let h=5; h<=23; h++) {
+    if (h>=10 && h<=15) cur += a1015;
+    if (h>=21) cur += a2124;
     hours.push(h);
-    if (h >= 10 && h <= 15) cur += adj1015;
-    if (h >= 21) cur += adj2124;
     values.push(cur);
   }
+  const ok = values.every(v => v>=0 && v<=cap);
+  return {hours, values, ok};
+}
 
-  /* ===== 表格 ===== */
-  const tb = document.querySelector("#tbl tbody");
+function recalc() {
+  const cap = +document.getElementById("capacity").value;
+  const v5Val = +document.getElementById("v5").value;
+  const a1015 = +document.getElementById("adj1015").value;
+  const a2124 = +document.getElementById("adj2124").value;
+
+  const {hours, values} = compute(v5Val, a1015, a2124, cap);
+
+  // table
+  const tb = document.getElementById("tbody");
   tb.innerHTML = "";
   values.forEach((v,i)=>{
     const tr = document.createElement("tr");
-    if (v < 0 || v > cap) tr.className = "over";
+    if (v<0 || v>cap) tr.className="over";
     tr.innerHTML = `<td>${hours[i]}</td><td>${v}</td>`;
     tb.appendChild(tr);
   });
 
-  /* ===== 摘要 ===== */
-  const over = values
-    .map((v,i)=>({h:hours[i],v}))
-    .filter(d=>d.v<0 || d.v>cap);
-
-  let summaryText = `本站 5 點配置 <b>${v5}</b> 輛，`;
-  summaryText += `10–15 點調度 <b>${adj1015}</b> 輛、`;
-  summaryText += `21–24 點調度 <b>${adj2124}</b> 輛。<br>`;
-
-  if (over.length === 0) {
-    summaryText += `全日 <b>無超限時段</b>，車輛皆介於 <b>0–${cap}</b> 輛之間。`;
+  // summary
+  const over = values.map((v,i)=>({h:hours[i],v})).filter(d=>d.v<0||d.v>cap);
+  let txt = `5 點配置 <b>${v5Val}</b> 輛，10–15 調度 <b>${a1015}</b>，21–24 調度 <b>${a2124}</b>。<br>`;
+  if (over.length===0) {
+    txt += `全日 <b>無超限</b>，皆介於 0–${cap} 輛。`;
   } else {
     const min = over.reduce((a,b)=>a.v<b.v?a:b);
     const max = over.reduce((a,b)=>a.v>b.v?a:b);
-    summaryText += `於 <b>${over[0].h}–${over[over.length-1].h} 點</b> 出現超限，`;
-    summaryText += `最低 <b>${min.v}</b>（${min.h} 點）、`;
-    summaryText += `最高 <b>${max.v}</b>（${max.h} 點）。`;
+    txt += `超限時段 ${over[0].h}–${over[over.length-1].h} 點，最低 ${min.v}（${min.h} 點）、最高 ${max.v}（${max.h} 點）。`;
   }
-  document.getElementById("summary").innerHTML = summaryText;
+  document.getElementById("summary").innerHTML = txt;
 
-  /* ===== 圖表 ===== */
-  const ymax = cap * 2;
-  const ymin = -cap * 2;
-
+  // chart
+  const ymin = -cap*2, ymax = cap*2;
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById("chart"), {
-    type: "line",
-    data: {
-      labels: hours,
-      datasets: [
-        { label: station.value, data: values, borderColor: "green", tension: 0.3 },
-        { label: "車位上限", data: hours.map(()=>cap), borderColor: "red", borderDash: [5,5] },
-        { label: "0", data: hours.map(()=>0), borderColor: "orange" }
+    type:"line",
+    data:{
+      labels:hours,
+      datasets:[
+        {label:station.value,data:values,borderColor:"green",tension:0.3},
+        {label:"車位上限",data:hours.map(()=>cap),borderColor:"red",borderDash:[5,5]},
+        {label:"0",data:hours.map(()=>0),borderColor:"orange"}
       ]
     },
-    options: {
-      animation: false,
-      scales: { y: { min: ymin, max: ymax } },
-      plugins: { tooltip: { enabled: false } }
+    options:{
+      animation:false,
+      scales:{y:{min:ymin,max:ymax}},
+      plugins:{tooltip:{enabled:false}}
     },
-    plugins: [{
-      id: "labels",
-      afterDatasetsDraw(chart) {
-        const ctx = chart.ctx;
-        ctx.fillStyle = "red";
-        ctx.font = "bold 13px Arial";
-        chart.getDatasetMeta(0).data.forEach((p,i)=>{
-          ctx.fillText(values[i], p.x - 10, p.y - 8);
+    plugins:[{
+      afterDatasetsDraw(c){
+        const ctx=c.ctx;
+        ctx.fillStyle="red";
+        ctx.font="bold 13px Arial";
+        c.getDatasetMeta(0).data.forEach((p,i)=>{
+          ctx.fillText(values[i],p.x-10,p.y-8);
         });
       }
     }]
   });
+}
+
+function solveBest() {
+  const cap = +document.getElementById("capacity").value;
+  document.getElementById("adj1015").value = 0;
+  document.getElementById("adj2124").value = 0;
+
+  for (let v=0; v<=cap; v++) {
+    const r = compute(v,0,0,cap);
+    if (r.ok) {
+      document.getElementById("v5").value = v;
+      recalc();
+      alert("已找到最佳解：5 點配置 = "+v+" 輛（無需調度）");
+      return;
+    }
+  }
+  alert("僅靠 5 點配置無法滿足，需搭配調度。");
 }
 
 recalc();
