@@ -8,13 +8,13 @@
 body { font-family: Arial, "Noto Sans TC", sans-serif; }
 .box { border:1px solid #ccc; padding:16px; border-radius:6px; margin-bottom:16px; }
 .row { display:flex; gap:20px; }
-label { display:inline-block; width:110px; }
+label { display:inline-block; width:120px; }
 input { width:90px; }
-button { margin-left:8px; }
+button { margin-left:6px; }
 table { border-collapse:collapse; width:100%; }
 th,td { border:1px solid #ccc; padding:4px 8px; text-align:center; }
 tr.over { background:#fde0e0; }
-.summary { background:#f6f8fa; border-left:4px solid #4caf50; padding:8px; margin-bottom:8px; }
+.summary { background:#f6f8fa; border-left:4px solid #4caf50; padding:8px; margin-bottom:8px; line-height:1.6; }
 </style>
 </head>
 <body>
@@ -28,7 +28,7 @@ tr.over { background:#fde0e0; }
     <label>總車位</label><input id="capacity" type="number" value="28">
   </div>
   <div style="margin-top:8px">
-    <label>5 點車輛數</label><input id="v5" type="number" value="0">
+    <label>5 點車輛數</label><input id="v5" type="number" value="12">
     <label>10–15 調度</label><input id="adj1015" type="number" value="0">
     <label>21–24 調度</label><input id="adj2124" type="number" value="0">
     <button onclick="recalc()">更新圖表</button>
@@ -50,31 +50,44 @@ tr.over { background:#fde0e0; }
 </div>
 
 <script>
+/* === 內建：第一版 Excel 每小時變化量 === */
+const hourlyDelta = {
+  6:-9, 7:-18, 8:-11, 9:-9, 10:-9,
+  11:-18, 12:-11, 13:-9, 14:-11, 15:-14,
+  16:-25, 17:-35, 18:-34, 19:-39, 20:-40,
+  21:-38, 22:-33, 23:-35
+};
+
 let chart;
 
-function compute(v5Val, a1015, a2124, cap) {
-  let cur = v5Val;
+/* === 計算核心：逐小時累加（A1） === */
+function compute(v5, adj1015, adj2124, cap) {
+  let cur = v5;
   const hours = [];
   const values = [];
+
   for (let h=5; h<=23; h++) {
-    if (h>=10 && h<=15) cur += a1015;
-    if (h>=21) cur += a2124;
+    if (h>=6) cur += (hourlyDelta[h] || 0);
+    if (h>=10 && h<=15) cur += adj1015;
+    if (h>=21) cur += adj2124;
+
     hours.push(h);
     values.push(cur);
   }
+
   const ok = values.every(v => v>=0 && v<=cap);
   return {hours, values, ok};
 }
 
 function recalc() {
   const cap = +document.getElementById("capacity").value;
-  const v5Val = +document.getElementById("v5").value;
+  const v5 = +document.getElementById("v5").value;
   const a1015 = +document.getElementById("adj1015").value;
   const a2124 = +document.getElementById("adj2124").value;
 
-  const {hours, values} = compute(v5Val, a1015, a2124, cap);
+  const {hours, values} = compute(v5, a1015, a2124, cap);
 
-  // table
+  /* 表格 */
   const tb = document.getElementById("tbody");
   tb.innerHTML = "";
   values.forEach((v,i)=>{
@@ -84,20 +97,19 @@ function recalc() {
     tb.appendChild(tr);
   });
 
-  // summary
+  /* 摘要 */
   const over = values.map((v,i)=>({h:hours[i],v})).filter(d=>d.v<0||d.v>cap);
-  let txt = `5 點配置 <b>${v5Val}</b> 輛，10–15 調度 <b>${a1015}</b>，21–24 調度 <b>${a2124}</b>。<br>`;
+  let txt = `5 點配置 <b>${v5}</b> 輛，10–15 調度 <b>${a1015}</b>，21–24 調度 <b>${a2124}</b>。<br>`;
   if (over.length===0) {
     txt += `全日 <b>無超限</b>，皆介於 0–${cap} 輛。`;
   } else {
     const min = over.reduce((a,b)=>a.v<b.v?a:b);
     const max = over.reduce((a,b)=>a.v>b.v?a:b);
-    txt += `超限時段 ${over[0].h}–${over[over.length-1].h} 點，最低 ${min.v}（${min.h} 點）、最高 ${max.v}（${max.h} 點）。`;
+    txt += `超限 ${over[0].h}–${over[over.length-1].h} 點，最低 ${min.v}（${min.h} 點）、最高 ${max.v}（${max.h} 點）。`;
   }
   document.getElementById("summary").innerHTML = txt;
 
-  // chart
-  const ymin = -cap*2, ymax = cap*2;
+  /* 圖表 */
   if (chart) chart.destroy();
   chart = new Chart(document.getElementById("chart"), {
     type:"line",
@@ -111,7 +123,7 @@ function recalc() {
     },
     options:{
       animation:false,
-      scales:{y:{min:ymin,max:ymax}},
+      scales:{y:{min:-cap*2,max:cap*2}},
       plugins:{tooltip:{enabled:false}}
     },
     plugins:[{
@@ -127,6 +139,7 @@ function recalc() {
   });
 }
 
+/* === 一鍵最佳解（優先不調度） === */
 function solveBest() {
   const cap = +document.getElementById("capacity").value;
   document.getElementById("adj1015").value = 0;
@@ -137,7 +150,7 @@ function solveBest() {
     if (r.ok) {
       document.getElementById("v5").value = v;
       recalc();
-      alert("已找到最佳解：5 點配置 = "+v+" 輛（無需調度）");
+      alert("最佳解：5 點配置 = "+v+" 輛（無需調度）");
       return;
     }
   }
