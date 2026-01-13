@@ -1,127 +1,44 @@
-<!doctype html>
-<html lang="zh-Hant">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>YouBike 每小時在站車輛數（最終穩定版）</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
-<style>
-body{font-family:system-ui;margin:16px}
-h1{font-size:32px;margin-bottom:12px}
-.controls{border:1px solid #ccc;border-radius:8px;padding:12px}
-.controls label{font-weight:700;margin-right:6px}
-.controls input{margin-right:12px}
-button{font-weight:700}
-.main{display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-top:12px}
-.panel{border:1px solid #ccc;border-radius:8px;padding:8px}
-.summary{font-size:18px;font-weight:800;margin-bottom:8px}
-table{width:100%;border-collapse:collapse}
-th,td{border:1px solid #ddd;padding:4px;text-align:center}
-.bad{background:#fde2e2}
-</style>
-</head>
-
-<body>
-<h1>YouBike 每小時在站車輛數（最終穩定版）</h1>
-
-<div class="controls">
-  <label>場站</label><input id="station">
-  <label>責任區</label><input id="area" disabled>
-  <label>總車位</label><input id="cap" disabled>
-  <label>5點</label><input id="v5" type="number" value="1" min="1">
-  <label>10–15</label><input id="d1015" type="number" value="0">
-  <label>21–24</label><input id="d2124" type="number" value="0">
-  <button id="btnUpdate">更新圖表</button>
-  <button id="btnBest">最佳解</button>
-  <button id="btnAuto">自動求解</button>
-  <div id="dbInfo"></div>
-</div>
-
-<div class="main">
-  <div class="panel"><canvas id="chart"></canvas></div>
-  <div class="panel">
-    <div id="summary" class="summary"></div>
-    <table>
-      <thead><tr><th>時間</th><th>在站</th></tr></thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
-</div>
+<!-- ⚠️ 省略：HTML / CSS / UI 與你現有版本完全相同 -->
+<!-- ⚠️ 以下只列出「計算邏輯區」，其餘請保持你現有版本 -->
 
 <script>
-const HOURS=[...Array(19)].map((_,i)=>i+5);
-let DB=[],chart;
+/* ===========================
+   Solve: Best / Second / Fallback（依新規格）
+=========================== */
 
-const $=id=>document.getElementById(id);
-
-fetch("default_db.json")
-.then(r=>r.json())
-.then(j=>{
-  DB=j;
-  $("dbInfo").textContent=`資料來源 default_db.json（${DB.length} 站）`;
-});
-
-function findStation(q){
-  return DB.find(s=>s.station.includes(q));
-}
-
-function delta(st,h){return st.deltas?.[h]||0}
-function in1015(h){return h>=10&&h<=15}
-function in2123(h){return h>=21}
-
-function series(st,v5,d1,d2){
-  return HOURS.map(h=>{
-    let v=v5+delta(st,h);
-    if(in1015(h))v+=d1;
-    if(in2123(h))v+=d2;
-    return v;
-  });
-}
-
-function feasible(st,arr){
-  return arr.slice(1).every(v=>v>=0&&v<=st.capacity);
-}
-
+/* Best:
+   v5 ∈ [0,cap], d1015=0, d2124=0, 全可行
+*/
 function solveBest(st){
-  for(let v=1;v<=st.capacity;v++){
-    if(feasible(st,series(st,v,0,0)))
-      return {kind:"最佳解",v5:v,d1015:0,d2124:0};
-  }
-  return null;
-}
-
-function solveSecondBest(st){
-  for(let r=1;r<=st.capacity;r++){
-    for(const s of [-1,1]){
-      let d=s*r;
-      let lo=1;
-      if(feasible(st,series(st,lo,d,0)))
-        return {kind:"次佳解",v5:lo,d1015:d,d2124:0};
-      if(feasible(st,series(st,lo,0,d)))
-        return {kind:"次佳解",v5:lo,d1015:0,d2124:d};
+  const cap = st.capacity;
+  for(let v5=0; v5<=cap; v5++){
+    const vals = calcSeries(st, v5, 0, 0);
+    if(isAllFeasible(st, vals)){
+      return { kind:"最佳解", v5, d1015:0, d2124:0 };
     }
   }
   return null;
 }
 
-function violation(st,arr){
-  return arr.slice(1).reduce((s,v)=>{
-    if(v<0)return s-v;
-    if(v>st.capacity)return s+(v-st.capacity);
-    return s;
-  },0);
-}
+/* Second Best:
+   v5 ≥ 0
+   d1015,d2124 ∈ [-56,56]
+   必須全可行
+*/
+function solveSecondBest(st){
+  const cap = st.capacity;
+  const LIM = 56;
+  let best = null;
 
-function solveFallback(st){
-  let best=null;
-  for(let d1=-st.capacity;d1<=st.capacity;d1++){
-    for(let d2=-st.capacity;d2<=st.capacity;d2++){
-      for(let v=1;v<=st.capacity;v++){
-        let arr=series(st,v,d1,d2);
-        let viol=violation(st,arr);
-        if(!best||viol<best.viol){
-          best={kind:"最後解",v5:v,d1015:d1,d2124:d2,viol};
+  for(let d1015=-LIM; d1015<=LIM; d1015++){
+    for(let d2124=-LIM; d2124<=LIM; d2124++){
+      for(let v5=0; v5<=cap; v5++){
+        const vals = calcSeries(st, v5, d1015, d2124);
+        if(isAllFeasible(st, vals)){
+          const mag = Math.abs(d1015) + Math.abs(d2124);
+          if(!best || mag < best.mag){
+            best = { kind:"次佳解", v5, d1015, d2124, mag };
+          }
         }
       }
     }
@@ -129,66 +46,35 @@ function solveFallback(st){
   return best;
 }
 
-function solveGuaranteed(st){
+/* Fallback:
+   v5 ≥ 0
+   調度不限制
+   最小化 violation
+*/
+function solveFallback(st){
+  const cap = st.capacity;
+  const LIM = cap; // 合理上限
+  let best = null;
+
+  for(let d1015=-LIM; d1015<=LIM; d1015++){
+    for(let d2124=-LIM; d2124<=LIM; d2124++){
+      for(let v5=0; v5<=cap; v5++){
+        const vals = calcSeries(st, v5, d1015, d2124);
+        const viol = totalViolation(st, vals);
+        const mag = Math.abs(d1015) + Math.abs(d2124);
+        if(!best ||
+           viol < best.viol ||
+           (viol === best.viol && mag < best.mag)){
+          best = { kind:"最後解", v5, d1015, d2124, viol, mag };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/* 保證每站至少一解 */
+function solveAuto(st){
   return solveBest(st) || solveSecondBest(st) || solveFallback(st);
 }
-
-function render(st,sol){
-  $("area").value=st.area;
-  $("cap").value=st.capacity;
-  $("v5").value=sol.v5;
-  $("d1015").value=sol.d1015;
-  $("d2124").value=sol.d2124;
-
-  const arr=series(st,sol.v5,sol.d1015,sol.d2124);
-  $("summary").textContent=
-    `${sol.kind}｜5=${sol.v5} 10–15=${sol.d1015} 21–24=${sol.d2124}`;
-
-  $("tbody").innerHTML="";
-  arr.forEach((v,i)=>{
-    let tr=document.createElement("tr");
-    if(i>0&&(v<0||v>st.capacity))tr.className="bad";
-    tr.innerHTML=`<td>${HOURS[i]}</td><td>${v}</td>`;
-    $("tbody").appendChild(tr);
-  });
-
-  if(chart)chart.destroy();
-  chart=new Chart($("chart"),{
-    type:"line",
-    data:{
-      labels:HOURS,
-      datasets:[
-        {label:st.station,data:arr,borderColor:"green",tension:.3},
-        {label:"上限",data:HOURS.map(()=>st.capacity),borderColor:"red",borderDash:[5,5]},
-        {label:"0",data:HOURS.map(()=>0),borderColor:"orange"}
-      ]
-    },
-    options:{responsive:true,maintainAspectRatio:false}
-  });
-}
-
-$("btnUpdate").onclick=()=>{
-  let st=findStation($("station").value);
-  if(!st)return;
-  render(st,{
-    kind:"手動",
-    v5:+$("v5").value,
-    d1015:+$("d1015").value,
-    d2124:+$("d2124").value
-  });
-};
-
-$("btnBest").onclick=()=>{
-  let st=findStation($("station").value);
-  if(!st)return;
-  render(st,solveGuaranteed(st));
-};
-
-$("btnAuto").onclick=()=>{
-  let st=findStation($("station").value);
-  if(!st)return;
-  render(st,solveGuaranteed(st));
-};
 </script>
-</body>
-</html>
