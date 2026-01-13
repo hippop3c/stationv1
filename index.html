@@ -1,278 +1,733 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
+<!doctype html>
+<html lang="zh-Hant">
 <head>
-<meta charset="UTF-8" />
-<title>YouBike 每小時在站車輛數（最終穩定版）</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>YouBike 每小時在站車輛數（最終穩定版）</title>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Chart.js CDN (GitHub Pages OK) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-<style>
-body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  margin: 20px;
-}
+  <style>
+    :root{
+      --border:#cfd7e3;
+      --muted:#6b7280;
+      --bg:#ffffff;
+      --panel:#f8fafc;
+      --good:#2e7d32;
+      --badbg:#fde2e2;
+      --red:#d32f2f;
+      --orange:#f59e0b;
+      --green:#0a7a1f;
+    }
+    body{
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", Arial, sans-serif;
+      background: var(--bg);
+      margin: 18px;
+      color:#111827;
+    }
+    h1{
+      margin: 0 0 12px 0;
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
 
-h1 {
-  margin-bottom: 12px;
-}
+    /* ===== top controls (keep your current layout vibe, but aligned) ===== */
+    .controls{
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:14px 14px 10px 14px;
+      display:grid;
+      grid-template-columns: 90px 280px 90px 220px 90px 160px 110px 190px 110px 190px 110px 190px auto;
+      gap:10px 10px;
+      align-items:center;
+    }
+    .controls .meta{
+      grid-column: 1 / -1;
+      display:flex;
+      gap:12px;
+      align-items:center;
+      color:var(--muted);
+      font-size: 14px;
+      padding-top:2px;
+    }
+    label{
+      font-size: 18px;
+      font-weight: 700;
+      text-align:right;
+      white-space:nowrap;
+    }
+    input{
+      height: 34px;
+      border:1px solid var(--border);
+      border-radius: 6px;
+      padding: 0 10px;
+      font-size: 18px;
+      outline: none;
+    }
+    input:disabled{
+      background:#f3f4f6;
+      color:#374151;
+    }
+    .btns{
+      display:flex;
+      gap:10px;
+      justify-content:flex-end;
+      align-items:center;
+      grid-column: 12 / -1;
+    }
+    button{
+      height: 36px;
+      border:1px solid #9aa4b2;
+      background:#f5f5f5;
+      border-radius:6px;
+      padding: 0 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    button:hover{ filter:brightness(.98); }
+    button.primary{
+      background:#eaf2ff;
+      border-color:#7aa2ff;
+    }
 
-/* ===== 控制區 ===== */
-.controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-  align-items: center;
-  padding: 16px;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-}
+    /* ===== main layout ===== */
+    .main{
+      margin-top: 14px;
+      display:grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 14px;
+      align-items: stretch; /* important: make right side match left height */
+    }
+    .panel{
+      border:1px solid var(--border);
+      border-radius:10px;
+      background:#fff;
+      padding: 10px 12px;
+      min-height: 560px; /* stable alignment like your screenshot */
+      display:flex;
+      flex-direction:column;
+    }
+    .chartWrap{
+      flex:1;
+      min-height: 520px;
+    }
+    canvas{ width:100% !important; height:100% !important; }
 
-.controls label {
-  min-width: 80px;
-}
+    /* ===== right panel: summary + table align with chart height ===== */
+    .right{
+      padding: 10px 12px;
+      display:flex;
+      flex-direction:column;
+    }
+    .summary{
+      background: var(--panel);
+      border-left: 6px solid var(--good);
+      border-radius: 8px;
+      padding: 12px 12px;
+      margin-bottom: 10px;
+      font-size: 20px;         /* larger */
+      line-height: 1.35;
+      font-weight: 800;
+      white-space: pre-line;
+    }
+    .summary small{
+      display:block;
+      margin-top:6px;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    .tableWrap{
+      border:1px solid var(--border);
+      border-radius:10px;
+      overflow:hidden;
+      flex:1;                 /* fill the remaining height */
+      min-height: 0;          /* enable scroll properly */
+      display:flex;
+      flex-direction:column;
+      background:#fff;
+    }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      font-size: 18px;         /* larger */
+    }
+    thead th{
+      position: sticky;
+      top: 0;
+      background:#fff;
+      z-index: 2;
+      font-weight: 900;
+      font-size: 20px;
+      padding: 10px 6px;
+      border-bottom:1px solid var(--border);
+    }
+    tbody{
+      display:block;
+      overflow:auto;
+      flex:1;
+    }
+    thead, tbody tr{
+      display:table;
+      width:100%;
+      table-layout:fixed;
+    }
+    td{
+      border-top:1px solid var(--border);
+      padding: 6px 6px;
+      text-align:center;
+      font-weight: 700;
+    }
+    tr.bad{ background: var(--badbg); }
+    .hint{
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+    }
 
-.controls input {
-  width: 160px;
-  padding: 4px 6px;
-}
-
-.controls button {
-  padding: 6px 14px;
-  cursor: pointer;
-}
-
-/* ===== 主畫面 ===== */
-.main {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 16px;
-  margin-top: 16px;
-}
-
-/* ===== 摘要 ===== */
-.summary {
-  background: #f7f9fb;
-  border-left: 4px solid #2e7d32;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-  font-size: 15px;
-}
-
-/* ===== 表格 ===== */
-table {
-  border-collapse: collapse;
-  width: 100%;
-}
-
-th, td {
-  border: 1px solid #ccc;
-  padding: 4px 6px;
-  text-align: center;
-}
-
-tr.bad {
-  background: #fde2e2;
-}
-</style>
+    /* keep controls responsive */
+    @media (max-width: 1220px){
+      .controls{
+        grid-template-columns: 90px 1fr;
+      }
+      label{ text-align:left; }
+      .btns{ grid-column: 1 / -1; justify-content:flex-start; }
+    }
+  </style>
 </head>
 
 <body>
-<h1>YouBike 每小時在站車輛數（最終穩定版）</h1>
+  <h1>YouBike 每小時在站車輛數（最終穩定版）</h1>
 
-<div class="controls">
-  <label>場站</label>
-  <input id="stationInput" />
+  <div class="controls">
+    <label for="stationInput">場站</label>
+    <input id="stationInput" placeholder="可輸入關鍵字模糊搜尋，例如：信義敦化" />
 
-  <label>責任區</label>
-  <input id="areaInput" disabled />
+    <label>責任區</label>
+    <input id="areaInput" disabled />
 
-  <label>總車位</label>
-  <input id="capInput" disabled />
+    <label>總車位</label>
+    <input id="capInput" disabled />
 
-  <label>5 點車輛數</label>
-  <input id="v5" type="number" value="0" />
+    <label for="v5">5 點車輛數</label>
+    <input id="v5" type="number" value="1" min="1" />
 
-  <label>10–15 調度</label>
-  <input id="d1015" type="number" value="0" />
+    <label for="d1015">10–15 調度</label>
+    <input id="d1015" type="number" value="0" />
 
-  <label>21–24 調度</label>
-  <input id="d2124" type="number" value="0" />
+    <label for="d2124">21–24 調度</label>
+    <input id="d2124" type="number" value="0" />
 
-  <button onclick="update()">更新圖表</button>
-  <button onclick="best()">一鍵產出最佳解</button>
-</div>
+    <div class="btns">
+      <button class="primary" id="btnUpdate">更新圖表</button>
+      <button id="btnBest">最佳解（只配 5 點）</button>
+      <button id="btnAuto">自動求解（最佳→次佳→最後）</button>
+    </div>
 
-<div class="main">
-  <div>
-    <canvas id="chart" height="160"></canvas>
+    <div class="meta">
+      <span id="dbInfo" class="hint">資料來源：default_db.json（載入中…）</span>
+      <span id="status" class="hint"></span>
+    </div>
   </div>
 
-  <div>
-    <div id="summary" class="summary">請輸入場站</div>
-    <table>
-      <thead>
-        <tr><th>時間</th><th>在站</th></tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
+  <div class="main">
+    <div class="panel">
+      <div class="chartWrap">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
+
+    <div class="panel right">
+      <div id="summary" class="summary">請輸入場站（支援模糊搜尋）。</div>
+      <div class="tableWrap">
+        <table>
+          <thead>
+            <tr><th>時間</th><th>在站</th></tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
-</div>
 
 <script>
+/* ===========================
+   DB + helpers
+=========================== */
 let DB = [];
-let chart;
+let chart = null;
 
-/* ===== 載入 JSON ===== */
-fetch("default_db.json")
-  .then(r => r.json())
-  .then(j => DB = j);
+const $ = (id) => document.getElementById(id);
 
-/* ===== 模糊搜尋 ===== */
-function findStation(name) {
-  return DB.find(s => s.station.includes(name));
+const stationInput = $("stationInput");
+const areaInput = $("areaInput");
+const capInput = $("capInput");
+const v5Input = $("v5");
+const d1015Input = $("d1015");
+const d2124Input = $("d2124");
+const summaryEl = $("summary");
+const tbody = $("tbody");
+const dbInfo = $("dbInfo");
+const statusEl = $("status");
+
+const HOURS = Array.from({length: 19}, (_,i)=> i+5); // 5..23
+const HOURS_6_23 = Array.from({length: 18}, (_,i)=> i+6); // 6..23
+
+function toInt(x, fallback=0){
+  const n = Number(x);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
 }
 
-/* ===== 核心計算（正確版） ===== */
-function calc(st, v5, d1015, d2124) {
-  const hours = [];
-  const vals = [];
+function normalize(s){
+  return String(s||"").trim();
+}
 
-  for (let h = 5; h <= 23; h++) {
-    let v = v5;
+/* 模糊搜尋：包含就算命中，若多筆命中，取最短 station（較精準） */
+function findStationByFuzzy(name){
+  const q = normalize(name);
+  if(!q) return null;
+  const hits = DB.filter(r => (r.station||"").includes(q));
+  if(hits.length === 0) return null;
+  hits.sort((a,b)=> (a.station.length - b.station.length));
+  return hits[0];
+}
 
-    if (h !== 5 && st.deltas[String(h)] !== undefined) {
-      v += st.deltas[String(h)];
+function getDelta(st, hour){
+  if(hour === 5) return 0;
+  const v = st.deltas?.[String(hour)];
+  return (typeof v === "number") ? v : 0;
+}
+
+function in1015(h){ return h>=10 && h<=15; }
+function in2123(h){ return h>=21 && h<=23; }
+
+/* 計算：符合你 Excel 邏輯
+   在站(h) = v5 + delta[h] + (h in 10..15 ? d1015 : 0) + (h in 21..23 ? d2124 : 0)
+*/
+function calcSeries(st, v5, d1015, d2124){
+  const vals = HOURS.map(h=>{
+    let v = v5 + getDelta(st,h);
+    if(in1015(h)) v += d1015;
+    if(in2123(h)) v += d2124;
+    return v;
+  });
+  return vals;
+}
+
+function isAllFeasible(st, vals){
+  const cap = st.capacity;
+  // check only 6..23 per your spec for feasibility
+  for(let idx=1; idx<vals.length; idx++){
+    const v = vals[idx];
+    if(v < 0 || v > cap) return false;
+  }
+  return true;
+}
+
+/* violation for fallback (6..23) */
+function totalViolation(st, vals){
+  const cap = st.capacity;
+  let sum = 0;
+  for(let idx=1; idx<vals.length; idx++){
+    const v = vals[idx];
+    if(v > cap) sum += (v - cap);
+    else if(v < 0) sum += (0 - v);
+  }
+  return sum;
+}
+
+/* For fixed d1015,d2124, compute feasible range of v5 that makes all 6..23 within [0,cap]
+   Constraint: 0 <= v5 + off(h) <= cap  =>  -off <= v5 <= cap - off
+*/
+function feasibleV5Range(st, d1015, d2124){
+  const cap = st.capacity;
+  let L = -Infinity;
+  let U = Infinity;
+  for(const h of HOURS_6_23){
+    let off = getDelta(st,h);
+    if(in1015(h)) off += d1015;
+    if(in2123(h)) off += d2124;
+    L = Math.max(L, -off);
+    U = Math.min(U, cap - off);
+  }
+  // v5 must be integer and >0 and <=cap (reasonable)
+  const lo = Math.max(1, Math.ceil(L));
+  const hi = Math.min(cap, Math.floor(U));
+  return [lo, hi];
+}
+
+/* ===========================
+   Solve: Best / Second / Fallback
+=========================== */
+
+/* Best: only v5, dispatch 0 */
+function solveBest(st){
+  const [lo, hi] = feasibleV5Range(st, 0, 0);
+  if(lo <= hi){
+    const v5 = lo; // smallest feasible v5
+    return { kind:"最佳解", v5, d1015:0, d2124:0 };
+  }
+  return null;
+}
+
+/* Second best:
+   - must be feasible (all 6..23 within range)
+   - priority: single window, then both
+   - minimize |dispatch| (and for both, minimize |d1015|+|d2124|)
+*/
+function solveSecondBest(st){
+  const cap = st.capacity;
+  const R = Math.max(10, Math.min(80, cap*2)); // safe search radius
+
+  // helper to build solution if feasible
+  const tryDispatch = (d1015, d2124)=>{
+    const [lo, hi] = feasibleV5Range(st, d1015, d2124);
+    if(lo <= hi){
+      return { kind:"次佳解", v5: lo, d1015, d2124 };
+    }
+    return null;
+  };
+
+  // 1) only 10-15
+  for(let r=1; r<=R; r++){
+    for(const sgn of [-1, 1]){
+      const sol = tryDispatch(sgn*r, 0);
+      if(sol) return sol;
+    }
+  }
+
+  // 2) only 21-24
+  for(let r=1; r<=R; r++){
+    for(const sgn of [-1, 1]){
+      const sol = tryDispatch(0, sgn*r);
+      if(sol) return sol;
+    }
+  }
+
+  // 3) both windows, by manhattan radius
+  for(let m=1; m<=R; m++){
+    for(let a=-m; a<=m; a++){
+      const bAbs = m - Math.abs(a);
+      for(const b of (bAbs===0 ? [0] : [-bAbs, bAbs])){
+        const sol = tryDispatch(a, b);
+        if(sol) return sol;
+      }
+    }
+  }
+
+  return null;
+}
+
+/* Fallback:
+   minimize total violation over (v5>0, d1015,d2124 integers).
+   We search dispatch grid within [-cap, cap] (safe & meaningful),
+   and for each dispatch pair, choose v5 that minimizes totalViolation via breakpoints.
+*/
+function solveFallback(st){
+  const cap = st.capacity;
+  const D = cap; // search dispatch in [-cap,cap]
+  let best = null;
+
+  // Precompute base offsets per hour (delta only)
+  const baseOff = HOURS.map(h => getDelta(st,h));
+
+  function evalWithDispatch(d1015, d2124){
+    // offsets including dispatch
+    const off = baseOff.map((o, idx)=>{
+      const h = HOURS[idx];
+      let x = o;
+      if(in1015(h)) x += d1015;
+      if(in2123(h)) x += d2124;
+      return x;
+    });
+
+    // candidates for v5 that minimize piecewise-linear violation
+    const cand = new Set([1, cap]);
+    for(let idx=1; idx<off.length; idx++){
+      const o = off[idx];
+      // breakpoints near -o (hit 0) and cap-o (hit cap)
+      const t1 = -o;
+      const t2 = cap - o;
+      for(const t of [t1, t2]){
+        for(const v of [Math.floor(t), Math.ceil(t)]){
+          if(v >= 1 && v <= cap) cand.add(v);
+        }
+      }
     }
 
-    if (h >= 10 && h <= 15) v += d1015;
-    if (h >= 21 && h <= 23) v += d2124;
-
-    hours.push(h);
-    vals.push(v);
+    let bestLocal = null;
+    for(const v5 of cand){
+      // v5 must be > 0 already ensured
+      const vals = off.map(x => v5 + x);
+      const viol = totalViolation(st, vals);
+      // tie-break: smaller violation, then smaller |dispatch|, then smaller v5
+      const dispMag = Math.abs(d1015) + Math.abs(d2124);
+      if(!bestLocal ||
+         viol < bestLocal.viol ||
+         (viol === bestLocal.viol && dispMag < bestLocal.dispMag) ||
+         (viol === bestLocal.viol && dispMag === bestLocal.dispMag && v5 < bestLocal.v5)
+      ){
+        bestLocal = { v5, vals, viol, dispMag };
+      }
+    }
+    return bestLocal ? { d1015, d2124, ...bestLocal } : null;
   }
-  return { hours, vals };
+
+  for(let a=-D; a<=D; a++){
+    for(let b=-D; b<=D; b++){
+      const r = evalWithDispatch(a,b);
+      if(!r) continue;
+      if(!best ||
+         r.viol < best.viol ||
+         (r.viol === best.viol && r.dispMag < best.dispMag) ||
+         (r.viol === best.viol && r.dispMag === best.dispMag && r.v5 < best.v5)
+      ){
+        best = r;
+      }
+    }
+  }
+
+  return {
+    kind: "最後解",
+    v5: best.v5,
+    d1015: best.d1015,
+    d2124: best.d2124,
+    viol: best.viol
+  };
 }
 
-/* ===== 更新 ===== */
-function update() {
-  const name = stationInput.value.trim();
-  const st = findStation(name);
+/* Auto solve in order */
+function solveAuto(st){
+  const best = solveBest(st);
+  if(best) return best;
 
-  if (!st) {
-    summary.innerText = "找不到場站，請輸入更完整站名（支援模糊搜尋）";
-    return;
-  }
+  const second = solveSecondBest(st);
+  if(second) return second;
 
-  areaInput.value = st.area;
-  capInput.value = st.capacity;
-
-  const v5n = Number(v5.value);
-  const d1015n = Number(d1015.value);
-  const d2124n = Number(d2124.value);
-
-  const { hours, vals } = calc(st, v5n, d1015n, d2124n);
-
-  renderChart(st, hours, vals);
-  renderTable(st, hours, vals);
-  renderSummary(st, v5n, d1015n, d2124n, vals);
+  return solveFallback(st);
 }
 
-/* ===== 圖 ===== */
-function renderChart(st, hours, vals) {
+/* ===========================
+   Render UI
+=========================== */
+function render(st, v5, d1015, d2124, meta){
+  areaInput.value = st.area ?? "";
+  capInput.value = st.capacity ?? "";
+  v5Input.value = v5;
+  d1015Input.value = d1015;
+  d2124Input.value = d2124;
+
+  const vals = calcSeries(st, v5, d1015, d2124);
   const cap = st.capacity;
-  const up = Array(hours.length).fill(cap);
-  const low = Array(hours.length).fill(0);
 
-  if (chart) chart.destroy();
+  // Table
+  tbody.innerHTML = "";
+  for(let i=0;i<HOURS.length;i++){
+    const h = HOURS[i];
+    const v = vals[i];
+    const tr = document.createElement("tr");
+    if(i>=1 && (v<0 || v>cap)) tr.className = "bad"; // highlight 6..23 only
+    tr.innerHTML = `<td>${h}</td><td>${v}</td>`;
+    tbody.appendChild(tr);
+  }
 
-  chart = new Chart(document.getElementById("chart"), {
+  // Summary
+  const feasible = isAllFeasible(st, vals);
+  const minV = Math.min(...vals.slice(1)); // 6..23
+  const maxV = Math.max(...vals.slice(1)); // 6..23
+  const viol = totalViolation(st, vals);
+
+  let head = `${meta.kind}：5 點配置 ${v5}，10–15 調度 ${d1015}，21–24 調度 ${d2124}。`;
+  let tail = "";
+
+  if(meta.kind === "最後解"){
+    tail = `\n已最小化超限總量（Σ violation）＝${viol}。`;
+  }
+
+  if(feasible){
+    summaryEl.innerHTML =
+      `${head}\n全日無超限，皆介於 0–${cap}。${tail ? tail : ""}\n` +
+      `<small>最低（6–23）：${minV}；最高（6–23）：${maxV}；總車位：${cap}</small>`;
+  }else{
+    // show first/last hour violating
+    let first = null, last = null;
+    for(let i=1;i<vals.length;i++){
+      if(vals[i] < 0 || vals[i] > cap){
+        if(first===null) first = HOURS[i];
+        last = HOURS[i];
+      }
+    }
+    summaryEl.innerHTML =
+      `${head}\n超限：${first}–${last} 點；最低（6–23）：${minV}；最高（6–23）：${maxV}。${tail ? tail : ""}\n` +
+      `<small>提示：紅底為超限時段（僅檢查 6–23）。</small>`;
+  }
+
+  // Chart
+  drawChart(st, vals);
+}
+
+function drawChart(st, vals){
+  const cap = st.capacity;
+  const upper = HOURS.map(()=>cap);
+  const zero = HOURS.map(()=>0);
+
+  const yMin = Math.min(...vals, 0, -cap*2);
+  const yMax = Math.max(...vals, cap, cap*2);
+
+  const ctx = $("chart");
+
+  if(chart) chart.destroy();
+  chart = new Chart(ctx, {
     type: "line",
     data: {
-      labels: hours,
+      labels: HOURS,
       datasets: [
         {
           label: st.station,
           data: vals,
-          borderColor: "green",
-          tension: 0.3,
-          pointRadius: 3
+          borderColor: getComputedStyle(document.documentElement).getPropertyValue("--green").trim() || "green",
+          borderWidth: 2.5,
+          pointRadius: 3,
+          pointHoverRadius: 4,
+          tension: 0.35
         },
         {
           label: "車位上限",
-          data: up,
-          borderColor: "red",
+          data: upper,
+          borderColor: getComputedStyle(document.documentElement).getPropertyValue("--red").trim() || "red",
+          borderWidth: 2,
           borderDash: [6,4],
-          pointRadius: 0
+          pointRadius: 2
         },
         {
           label: "0",
-          data: low,
-          borderColor: "orange",
-          pointRadius: 0
+          data: zero,
+          borderColor: getComputedStyle(document.documentElement).getPropertyValue("--orange").trim() || "orange",
+          borderWidth: 2,
+          pointRadius: 2
         }
       ]
     },
     options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode:"index", intersect:false },
       plugins: {
-        legend: { position: "top" },
-        tooltip: { enabled: true }
+        legend: { position:"top", labels:{ boxWidth: 36, font:{ size: 14, weight: "700" } } },
+        tooltip: { enabled:true }
       },
       scales: {
+        x: { ticks:{ font:{ size: 12 } } },
         y: {
-          min: Math.min(...vals, 0) - 5,
-          max: Math.max(...vals, cap) + 5
+          min: Math.floor(yMin/2)*2,
+          max: Math.ceil(yMax/2)*2,
+          ticks:{ font:{ size: 12 } }
         }
       }
     }
   });
 }
 
-/* ===== 表格 ===== */
-function renderTable(st, hours, vals) {
-  tbody.innerHTML = "";
-  hours.forEach((h, i) => {
-    const tr = document.createElement("tr");
-    if (vals[i] < 0 || vals[i] > st.capacity) tr.className = "bad";
-    tr.innerHTML = `<td>${h}</td><td>${vals[i]}</td>`;
-    tbody.appendChild(tr);
-  });
-}
-
-/* ===== 摘要 ===== */
-function renderSummary(st, v5n, d1015n, d2124n, vals) {
-  const bad = vals
-    .map((v,i)=>({v,i}))
-    .filter(x => x.v < 0 || x.v > st.capacity);
-
-  if (bad.length === 0) {
-    summary.innerText =
-      `5 點配置 ${v5n} 輛，10–15 調度 ${d1015n}，21–24 調度 ${d2124n}。\n全日無超限，皆介於 0–${st.capacity}。`;
-  } else {
-    const min = Math.min(...vals);
-    const max = Math.max(...vals);
-    summary.innerText =
-      `5 點配置 ${v5n} 輛，10–15 調度 ${d1015n}，21–24 調度 ${d2124n}。\n超限 ${bad[0].i+5}–${bad.at(-1).i+5} 點，最低 ${min}，最高 ${max}。`;
+/* ===========================
+   Actions
+=========================== */
+function getSelectedStation(){
+  const name = normalize(stationInput.value);
+  const st = findStationByFuzzy(name);
+  if(!st){
+    statusEl.textContent = "找不到場站，請輸入更完整站名（支援模糊搜尋）。";
+    return null;
   }
+  statusEl.textContent = "";
+  return st;
 }
 
-/* ===== 最佳解 ===== */
-function best() {
-  const name = stationInput.value.trim();
-  const st = findStation(name);
-  if (!st) return;
+function updateManual(){
+  const st = getSelectedStation();
+  if(!st) return;
 
-  for (let v = 0; v <= st.capacity; v++) {
-    const { vals } = calc(st, v, 0, 0);
-    if (vals.every(x => x >= 0 && x <= st.capacity)) {
-      v5.value = v;
-      d1015.value = 0;
-      d2124.value = 0;
-      update();
-      return;
+  const v5 = Math.max(1, toInt(v5Input.value, 1)); // must be >0
+  const d1015 = toInt(d1015Input.value, 0);
+  const d2124 = toInt(d2124Input.value, 0);
+
+  render(st, v5, d1015, d2124, {kind:"手動顯示"});
+}
+
+function clickBest(){
+  const st = getSelectedStation();
+  if(!st) return;
+
+  const sol = solveBest(st);
+  if(!sol){
+    alert("此站不存在「最佳解」（僅 5 點配置、不調度）。請使用「自動求解」。");
+    return;
+  }
+  render(st, sol.v5, sol.d1015, sol.d2124, sol);
+}
+
+function clickAuto(){
+  const st = getSelectedStation();
+  if(!st) return;
+
+  // show busy hint quickly (large fallback search can take a moment)
+  statusEl.textContent = "求解中…（最佳→次佳→最後）";
+  setTimeout(()=>{
+    const sol = solveAuto(st);
+    render(st, sol.v5, sol.d1015, sol.d2124, sol);
+    statusEl.textContent = "";
+  }, 20);
+}
+
+/* ===========================
+   Wire events
+=========================== */
+$("btnUpdate").addEventListener("click", updateManual);
+$("btnBest").addEventListener("click", clickBest);
+$("btnAuto").addEventListener("click", clickAuto);
+
+// typing: debounce update station linkage (area/cap) but not auto-solve
+let t = null;
+stationInput.addEventListener("input", ()=>{
+  clearTimeout(t);
+  t = setTimeout(()=>{
+    const st = findStationByFuzzy(stationInput.value);
+    if(st){
+      areaInput.value = st.area ?? "";
+      capInput.value = st.capacity ?? "";
+      statusEl.textContent = "";
+    }else{
+      areaInput.value = "";
+      capInput.value = "";
+      statusEl.textContent = "找不到場站，請輸入更完整站名（支援模糊搜尋）。";
     }
-  }
-  alert("找不到最佳解");
-}
+  }, 120);
+});
+
+/* Load DB */
+fetch("default_db.json", { cache: "no-store" })
+  .then(r => {
+    if(!r.ok) throw new Error("default_db.json 載入失敗：" + r.status);
+    return r.json();
+  })
+  .then(j => {
+    DB = Array.isArray(j) ? j : [];
+    dbInfo.textContent = `資料來源：default_db.json（${DB.length} 站）`;
+    // optional: preload an example if user already has input
+    if(normalize(stationInput.value)){
+      updateManual();
+    }else{
+      summaryEl.textContent = "請輸入場站（支援模糊搜尋），或按「自動求解」。";
+    }
+  })
+  .catch(err => {
+a=>{
+    dbInfo.textContent = "資料來源：default_db.json（載入失敗）";
+    statusEl.textContent = String(err).slice(0,200);
+  });
 </script>
 </body>
 </html>
