@@ -1,268 +1,236 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-TW">
 <head>
-<meta charset="utf-8" />
+<meta charset="UTF-8" />
 <title>YouBike 每小時在站車輛數（最終穩定版）</title>
-
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <style>
-body{
-  font-family: system-ui, -apple-system, "Segoe UI", Arial;
-  margin:16px;
-  background:#fff;
+body {
+  font-family: "Segoe UI", "Noto Sans TC", sans-serif;
+  margin: 20px;
+}
+h1 { margin-bottom: 12px; }
+
+.panel {
+  border: 1px solid #cfd8e3;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
 }
 
-h1{ margin-bottom:12px; }
-
-.panel{
-  border:1px solid #cfd6e4;
-  border-radius:10px;
-  padding:12px;
-  margin-bottom:12px;
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
 }
 
-.controls{
-  display:grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap:8px 12px;
-  align-items:center;
+label { font-weight: 600; }
+input {
+  padding: 4px 6px;
+  min-width: 120px;
 }
 
-label{ white-space:nowrap; }
-
-input{
-  padding:4px 6px;
-  font-size:14px;
+button {
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
 }
 
-.btns{
-  grid-column:1 / -1;
-  display:flex;
-  gap:10px;
-  margin-top:6px;
+.main {
+  display: flex;
+  gap: 12px;
 }
 
-button{
-  padding:6px 12px;
-  font-size:14px;
-  cursor:pointer;
+.left {
+  flex: 2;
 }
 
-.main{
-  display:grid;
-  grid-template-columns: 2fr 1fr;
-  gap:12px;
+.right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
-.chart-box{
-  border:1px solid #cfd6e4;
-  border-radius:10px;
-  padding:8px;
+.summary {
+  border-left: 5px solid #2e7d32;
+  background: #f4fbf6;
+  padding: 12px;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
 }
 
-.side{
-  border:1px solid #cfd6e4;
-  border-radius:10px;
-  padding:8px;
-  display:flex;
-  flex-direction:column;
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 16px;
 }
 
-.summary{
-  border-left:4px solid #2e7d32;
-  background:#f6faf6;
-  padding:10px;
-  font-size:16px;
-  font-weight:600;
-  margin-bottom:8px;
+th, td {
+  border: 1px solid #ccc;
+  padding: 6px;
+  text-align: center;
 }
 
-table{
-  width:100%;
-  border-collapse:collapse;
-  font-size:16px;
+tr.bad {
+  background: #fde2e2;
 }
 
-th,td{
-  border:1px solid #ccc;
-  padding:6px 4px;
-  text-align:center;
-}
-
-tbody tr.warn{ background:#fde2e2; }
-
-#status{
-  margin-top:6px;
-  font-size:13px;
-  color:#555;
+canvas {
+  height: 420px !important;
 }
 </style>
 </head>
 
 <body>
-
 <h1>YouBike 每小時在站車輛數（最終穩定版）</h1>
 
 <div class="panel">
-  <div class="controls">
-    <label>場站</label>
-    <input id="station">
-
-    <label>責任區</label>
-    <input id="area" readonly>
-
-    <label>總車位</label>
-    <input id="capacity" readonly>
-
-    <label>5 點車輛數</label>
-    <input id="b5" type="number" min="0">
-
-    <label>10–15 調度</label>
-    <input id="d10" type="number">
-
-    <label>21–24 調度</label>
-    <input id="d21" type="number">
-
-    <div class="btns">
-      <button onclick="updateChart()">更新圖表</button>
-      <button onclick="bestOnly()">最佳解（只配 5 點）</button>
-      <button onclick="autoSolve()">自動求解（最佳→次佳→最後）</button>
-    </div>
+  <div class="row">
+    <label>場站</label><input id="stationInput">
+    <label>責任區</label><input id="areaInput" readonly>
+    <label>總車位</label><input id="capInput" readonly>
+    <label>5 點車輛數</label><input id="b5Input" type="number" value="0">
+    <label>10–15 調度</label><input id="d10Input" type="number" value="0">
+    <label>21–24 調度</label><input id="d21Input" type="number" value="0">
   </div>
-
-  <div id="status">資料來源：default_db.json（載入中…）</div>
+  <div class="row" style="margin-top:8px;">
+    <button onclick="update()">更新圖表</button>
+    <button onclick="bestOnly()">最佳解（只配 5 點）</button>
+    <button onclick="autoSolve()">自動求解（最佳→次佳→最後）</button>
+  </div>
+  <div id="dbStatus" style="margin-top:6px;color:#555;"></div>
 </div>
 
 <div class="main">
-  <div class="chart-box">
+  <div class="left">
     <canvas id="chart"></canvas>
   </div>
-
-  <div class="side">
-    <div id="summary" class="summary">請輸入場站（支援模糊搜尋）。</div>
+  <div class="right">
+    <div class="summary" id="summary"></div>
     <table>
-      <thead><tr><th>時間</th><th>在站</th></tr></thead>
+      <thead>
+        <tr><th>時間</th><th>在站</th></tr>
+      </thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
 </div>
 
 <script>
-let DB=[], cur=null, chart=null;
+let DB = [];
+let chart;
 
-fetch("./default_db.json",{cache:"no-store"})
-.then(r=>r.json())
-.then(d=>{
-  DB=d;
-  status.textContent=`資料來源：default_db.json（${DB.length} 站）`;
-})
-.catch(e=>{
-  status.textContent="❌ default_db.json 載入失敗";
-  console.error(e);
-});
-
-station.oninput=()=>{
-  if(!DB.length) return;
-  const q=station.value.trim();
-  if(!q) return;
-  const hit=DB.find(r=>r.station.includes(q));
-  if(!hit){
-    summary.textContent="找不到場站，請輸入更完整站名。";
-    return;
-  }
-  cur=hit;
-  area.value=hit.area||"";
-  capacity.value=hit.capacity;
-  draw(calc());
-};
-
-function calc(){
-  if(!cur) return [];
-  const b5v=Math.max(0, +b5.value||0);
-  const d10v=+d10.value||0;
-  const d21v=+d21.value||0;
-
-  let res=[], v=b5v;
-  for(let h=5;h<=23;h++){
-    if(h>=10 && h<=15) v+=d10v;
-    if(h>=21) v+=d21v;
-    const delta=cur.deltas?.[h];
-    if(delta!==undefined) v+=delta;
-    res.push({h,v});
-  }
-  return res;
-}
-
-function draw(arr){
-  if(!arr.length) return;
-  const cap=cur.capacity;
-  summary.textContent=
-    `5點=${b5.value}｜10–15=${d10.value}｜21–24=${d21.value} ｜限制 0–${cap}`;
-
-  tbody.innerHTML="";
-  arr.forEach(o=>{
-    const tr=document.createElement("tr");
-    if(o.v<0 || o.v>cap) tr.className="warn";
-    tr.innerHTML=`<td>${o.h}</td><td>${o.v}</td>`;
-    tbody.appendChild(tr);
+fetch("default_db.json")
+  .then(r => r.json())
+  .then(d => {
+    DB = d;
+    document.getElementById("dbStatus").textContent =
+      `資料來源：default_db.json（${DB.length} 站）`;
   });
 
-  const labels=arr.map(o=>o.h);
-  const data=arr.map(o=>o.v);
+function findStation(name) {
+  return DB.find(s => s.station.includes(name));
+}
 
-  if(chart) chart.destroy();
-  chart=new Chart(document.getElementById("chart"),{
-    type:"line",
-    data:{
+function compute(cur, b5, d10, d21) {
+  let v = b5;
+  let out = [];
+  for (let h = 5; h <= 23; h++) {
+    if (h !== 5) {
+      if (cur.deltas[h] !== undefined) v += cur.deltas[h];
+      if (h === 10) v += d10;
+      if (h === 21) v += d21;
+    }
+    out.push({ h, v });
+  }
+  return out;
+}
+
+function draw(cur, rows) {
+  const labels = rows.map(r => r.h);
+  const data = rows.map(r => r.v);
+  const cap = cur.capacity;
+
+  const badCount = rows.filter(r => r.v < 0 || r.v > cap).length;
+
+  document.getElementById("summary").textContent =
+    `超限 ${badCount} 小時｜限制 0–${cap}`;
+
+  const tb = document.getElementById("tbody");
+  tb.innerHTML = "";
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    if (r.v < 0 || r.v > cap) tr.className = "bad";
+    tr.innerHTML = `<td>${r.h}</td><td>${r.v}</td>`;
+    tb.appendChild(tr);
+  });
+
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: {
       labels,
-      datasets:[
-        {label:cur.station,data,borderColor:"green",tension:.3},
-        {label:"上限",data:labels.map(_=>cap),borderColor:"red",borderDash:[5,5]},
-        {label:"0",data:labels.map(_=>0),borderColor:"orange"}
+      datasets: [
+        { label: cur.station, data, borderColor: "green", tension: 0.3 },
+        { label: "上限", data: labels.map(() => cap), borderColor: "red", borderDash:[5,5] },
+        { label: "0", data: labels.map(() => 0), borderColor: "orange" }
       ]
-    },
-    options:{
-      plugins:{legend:{position:"top"}},
-      scales:{y:{beginAtZero:false}}
     }
   });
 }
 
-function updateChart(){ draw(calc()); }
-
-function bestOnly(){
-  if(!cur) return;
-  let best=0,score=1e9;
-  for(let b=0;b<=cur.capacity;b++){
-    b5.value=b; d10.value=0; d21.value=0;
-    const a=calc();
-    const s=a.reduce((t,o)=>t+(o.v<0||o.v>cur.capacity),0);
-    if(s<score){score=s;best=b;}
-  }
-  b5.value=best; updateChart();
+function update() {
+  const cur = findStation(stationInput.value);
+  if (!cur) return;
+  areaInput.value = cur.area;
+  capInput.value = cur.capacity;
+  const rows = compute(
+    cur,
+    +b5Input.value,
+    +d10Input.value,
+    +d21Input.value
+  );
+  draw(cur, rows);
 }
 
-function autoSolve(){
-  if(!cur) return;
-  let best=null;
-  for(let b=0;b<=cur.capacity;b++){
-    for(let d10v=-5;d10v<=5;d10v++){
-      for(let d21v=-5;d21v<=5;d21v++){
-        b5.value=b; d10.value=d10v; d21.value=d21v;
-        const a=calc();
-        const bad=a.reduce((t,o)=>t+(o.v<0||o.v>cur.capacity),0);
-        if(!best || bad<best.bad){
-          best={b,d10v,d21v,bad};
-          if(bad===0) break;
+function bestOnly() {
+  const cur = findStation(stationInput.value);
+  if (!cur) return;
+  let best = null;
+  for (let b = 0; b <= cur.capacity; b++) {
+    const r = compute(cur, b, 0, 0);
+    const bad = r.filter(x => x.v < 0 || x.v > cur.capacity).length;
+    if (!best || bad < best.bad) best = { b, bad, r };
+    if (bad === 0) break;
+  }
+  b5Input.value = best.b;
+  d10Input.value = 0;
+  d21Input.value = 0;
+  draw(cur, best.r);
+}
+
+function autoSolve() {
+  const cur = findStation(stationInput.value);
+  if (!cur) return;
+  let best = null;
+  for (let b = 0; b <= cur.capacity; b++) {
+    for (let d10 = -50; d10 <= 50; d10 += 5) {
+      for (let d21 = -50; d21 <= 50; d21 += 5) {
+        const r = compute(cur, b, d10, d21);
+        const bad = r.filter(x => x.v < 0 || x.v > cur.capacity).length;
+        if (!best || bad < best.bad) {
+          best = { b, d10, d21, bad, r };
         }
+        if (bad === 0) break;
       }
     }
   }
-  b5.value=best.b;
-  d10.value=best.d10v;
-  d21.value=best.d21v;
-  updateChart();
+  b5Input.value = best.b;
+  d10Input.value = best.d10;
+  d21Input.value = best.d21;
+  draw(cur, best.r);
 }
 </script>
 </body>
