@@ -1,80 +1,186 @@
-<!-- ⚠️ 省略：HTML / CSS / UI 與你現有版本完全相同 -->
-<!-- ⚠️ 以下只列出「計算邏輯區」，其餘請保持你現有版本 -->
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>YouBike 每小時在站車輛數（最終穩定版）</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<style>
+body{font-family:system-ui,"Noto Sans TC";margin:18px}
+h1{font-size:34px;margin-bottom:12px}
+.controls{border:1px solid #ccc;border-radius:8px;padding:12px;display:grid;
+grid-template-columns:90px 240px 90px 140px 90px 140px 110px 140px 110px 140px auto;gap:8px;align-items:center}
+label{font-weight:700;text-align:right}
+input{height:32px;font-size:16px;padding:0 8px}
+button{height:34px;font-weight:700}
+.btns{display:flex;gap:8px;grid-column:11/-1}
+.main{margin-top:14px;display:grid;grid-template-columns:2fr 1fr;gap:14px}
+.panel{border:1px solid #ccc;border-radius:8px;padding:10px;min-height:560px}
+.chartWrap{height:520px}
+.right{display:flex;flex-direction:column}
+.summary{background:#f4f6f8;border-left:6px solid #2e7d32;padding:10px;
+font-size:18px;font-weight:800;margin-bottom:8px;white-space:pre-line}
+table{width:100%;border-collapse:collapse;font-size:16px}
+thead th{border-bottom:1px solid #ccc;padding:6px}
+tbody td{border-top:1px solid #eee;padding:4px;text-align:center}
+tr.bad{background:#fde2e2}
+</style>
+</head>
+
+<body>
+<h1>YouBike 每小時在站車輛數（最終穩定版）</h1>
+
+<div class="controls">
+<label>場站</label><input id="station">
+<label>責任區</label><input id="area" disabled>
+<label>總車位</label><input id="cap" disabled>
+<label>5點車輛</label><input id="v5" type="number" value="0">
+<label>10–15調度</label><input id="d1015" type="number" value="0">
+<label>21–24調度</label><input id="d2124" type="number" value="0">
+
+<div class="btns">
+<button id="btnUpdate">更新圖表</button>
+<button id="btnBest">最佳解</button>
+<button id="btnAuto">自動求解</button>
+</div>
+</div>
+
+<div class="main">
+<div class="panel">
+<div class="chartWrap"><canvas id="chart"></canvas></div>
+</div>
+
+<div class="panel right">
+<div id="summary" class="summary">請輸入場站</div>
+<table>
+<thead><tr><th>時間</th><th>在站</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+</div>
 
 <script>
-/* ===========================
-   Solve: Best / Second / Fallback（依新規格）
-=========================== */
+let DB=[],chart;
+const HOURS=[...Array(19)].map((_,i)=>i+5);
 
-/* Best:
-   v5 ∈ [0,cap], d1015=0, d2124=0, 全可行
-*/
+const $=id=>document.getElementById(id);
+const stationI=$("station"),areaI=$("area"),capI=$("cap");
+const v5I=$("v5"),d1015I=$("d1015"),d2124I=$("d2124");
+const tbody=$("tbody"),summary=$("summary");
+
+function findStation(q){
+  return DB.find(s=>s.station.includes(q));
+}
+function delta(st,h){return st.deltas?.[h]||0}
+function in1015(h){return h>=10&&h<=15}
+function in2123(h){return h>=21&&h<=23}
+
+function calc(st,v5,d1015,d2124){
+  return HOURS.map(h=>{
+    let v=v5+delta(st,h);
+    if(in1015(h))v+=d1015;
+    if(in2123(h))v+=d2124;
+    return v;
+  });
+}
+function feasible(st,vals){
+  return vals.slice(1).every(v=>v>=0&&v<=st.capacity);
+}
+function violation(st,vals){
+  return vals.slice(1).reduce((s,v)=>{
+    if(v<0)return s-v;
+    if(v>st.capacity)return s+v-st.capacity;
+    return s;
+  },0);
+}
+
+/* ===== 解法 ===== */
 function solveBest(st){
-  const cap = st.capacity;
-  for(let v5=0; v5<=cap; v5++){
-    const vals = calcSeries(st, v5, 0, 0);
-    if(isAllFeasible(st, vals)){
-      return { kind:"最佳解", v5, d1015:0, d2124:0 };
-    }
+  for(let v5=0;v5<=st.capacity;v5++){
+    const vals=calc(st,v5,0,0);
+    if(feasible(st,vals))
+      return{kind:"最佳解",v5,d1015:0,d2124:0,vals};
   }
   return null;
 }
-
-/* Second Best:
-   v5 ≥ 0
-   d1015,d2124 ∈ [-56,56]
-   必須全可行
-*/
-function solveSecondBest(st){
-  const cap = st.capacity;
-  const LIM = 56;
-  let best = null;
-
-  for(let d1015=-LIM; d1015<=LIM; d1015++){
-    for(let d2124=-LIM; d2124<=LIM; d2124++){
-      for(let v5=0; v5<=cap; v5++){
-        const vals = calcSeries(st, v5, d1015, d2124);
-        if(isAllFeasible(st, vals)){
-          const mag = Math.abs(d1015) + Math.abs(d2124);
-          if(!best || mag < best.mag){
-            best = { kind:"次佳解", v5, d1015, d2124, mag };
-          }
-        }
+function solveSecond(st){
+  let best=null;
+  for(let d1=-56;d1<=56;d1++)for(let d2=-56;d2<=56;d2++)
+    for(let v5=0;v5<=st.capacity;v5++){
+      const vals=calc(st,v5,d1,d2);
+      if(feasible(st,vals)){
+        const m=Math.abs(d1)+Math.abs(d2);
+        if(!best||m<best.m)
+          best={kind:"次佳解",v5,d1015:d1,d2124:d2,vals,m};
       }
     }
-  }
   return best;
 }
-
-/* Fallback:
-   v5 ≥ 0
-   調度不限制
-   最小化 violation
-*/
-function solveFallback(st){
-  const cap = st.capacity;
-  const LIM = cap; // 合理上限
-  let best = null;
-
-  for(let d1015=-LIM; d1015<=LIM; d1015++){
-    for(let d2124=-LIM; d2124<=LIM; d2124++){
-      for(let v5=0; v5<=cap; v5++){
-        const vals = calcSeries(st, v5, d1015, d2124);
-        const viol = totalViolation(st, vals);
-        const mag = Math.abs(d1015) + Math.abs(d2124);
-        if(!best ||
-           viol < best.viol ||
-           (viol === best.viol && mag < best.mag)){
-          best = { kind:"最後解", v5, d1015, d2124, viol, mag };
-        }
+function solveLast(st){
+  let best=null;
+  for(let d1=-st.capacity;d1<=st.capacity;d1++)
+    for(let d2=-st.capacity;d2<=st.capacity;d2++)
+      for(let v5=0;v5<=st.capacity;v5++){
+        const vals=calc(st,v5,d1,d2);
+        const v=violation(st,vals);
+        const m=Math.abs(d1)+Math.abs(d2);
+        if(!best||v<best.v||(v===best.v&&m<best.m))
+          best={kind:"最後解",v5,d1015:d1,d2124:d2,vals,v,m};
       }
-    }
-  }
   return best;
 }
-
-/* 保證每站至少一解 */
 function solveAuto(st){
-  return solveBest(st) || solveSecondBest(st) || solveFallback(st);
+  return solveBest(st)||solveSecond(st)||solveLast(st);
 }
+
+/* ===== Render ===== */
+function render(st,sol){
+  areaI.value=st.area;capI.value=st.capacity;
+  v5I.value=sol.v5;d1015I.value=sol.d1015;d2124I.value=sol.d2124;
+  tbody.innerHTML="";
+  sol.vals.forEach((v,i)=>{
+    const tr=document.createElement("tr");
+    if(i>0&&(v<0||v>st.capacity))tr.className="bad";
+    tr.innerHTML=`<td>${HOURS[i]}</td><td>${v}</td>`;
+    tbody.appendChild(tr);
+  });
+  summary.textContent=
+`${sol.kind}
+5點=${sol.v5}｜10–15=${sol.d1015}｜21–24=${sol.d2124}`;
+  drawChart(st,sol.vals);
+}
+function drawChart(st,vals){
+  if(chart)chart.destroy();
+  chart=new Chart($("chart"),{
+    type:"line",
+    data:{labels:HOURS,datasets:[
+      {label:st.station,data:vals,borderColor:"green"},
+      {label:"上限",data:HOURS.map(()=>st.capacity),
+       borderColor:"red",borderDash:[5,5]},
+      {label:"0",data:HOURS.map(()=>0),borderColor:"orange"}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false}
+  });
+}
+
+/* ===== Events ===== */
+$("btnUpdate").onclick=()=>{
+  const st=findStation(stationI.value);if(!st)return;
+  render(st,{kind:"手動",v5:+v5I.value,d1015:+d1015I.value,
+    d2124:+d2124I.value,vals:calc(st,+v5I.value,+d1015I.value,+d2124I.value)});
+};
+$("btnBest").onclick=()=>{
+  const st=findStation(stationI.value);if(!st)return;
+  const sol=solveBest(st);if(sol)render(st,sol);
+};
+$("btnAuto").onclick=()=>{
+  const st=findStation(stationI.value);if(!st)return;
+  render(st,solveAuto(st));
+};
+
+fetch("default_db.json").then(r=>r.json()).then(j=>DB=j);
 </script>
+</body>
+</html>
