@@ -9,18 +9,32 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
-body{font-family:system-ui,-apple-system,"Noto Sans TC";margin:16px}
-h1{font-size:32px;font-weight:800}
-input,button{font-size:16px;height:34px}
-.controls{display:grid;grid-template-columns:80px 260px 80px 120px 80px 120px 100px 120px 120px 120px 1fr;gap:8px;align-items:center;border:1px solid #ccc;border-radius:8px;padding:12px}
+body{font-family:"Noto Sans TC",system-ui;margin:16px}
+h1{font-size:30px;font-weight:800;margin-bottom:10px}
+.controls{
+  display:grid;
+  grid-template-columns:
+    70px 260px
+    70px 90px
+    70px 90px
+    70px 70px
+    80px 70px
+    80px 70px
+    auto;
+  gap:8px;
+  align-items:center;
+  border:1px solid #ccc;
+  padding:12px;
+  border-radius:8px;
+}
 label{font-weight:700;text-align:right}
-.main{margin-top:12px;display:grid;grid-template-columns:2fr 1fr;gap:12px}
+input,button{height:34px;font-size:14px}
+.main{display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-top:12px}
 .panel{border:1px solid #ccc;border-radius:8px;padding:8px}
-.summary{background:#f1f5f9;border-left:6px solid #15803d;padding:10px;font-size:18px;font-weight:700;margin-bottom:8px}
-table{width:100%;border-collapse:collapse;font-size:16px}
+.summary{background:#f1f5f9;border-left:6px solid #15803d;padding:8px;font-weight:700;white-space:pre-line}
+table{width:100%;border-collapse:collapse}
 th,td{border:1px solid #ccc;padding:4px;text-align:center}
 .bad{background:#fde2e2}
-button{cursor:pointer}
 </style>
 </head>
 
@@ -28,178 +42,225 @@ button{cursor:pointer}
 <h1>YouBike 每小時在站車輛數（最終穩定版 v3.2）</h1>
 
 <div class="controls">
-<label>場站</label><input id="station">
-<label>責任區</label><input id="area" disabled>
-<label>總車位</label><input id="cap" disabled>
-<label>5點</label><input id="v5" type="number" value="0">
-<label>10–15</label><input id="x" type="number" value="0">
-<label>21–24</label><input id="y" type="number" value="0">
-<button onclick="update()">更新圖表</button>
-<button onclick="solveAuto()">自動求解</button>
-<button onclick="exportExcel()">匯出 Excel (v3.2)</button>
+  <label>場站</label>
+  <input id="station" list="stations" placeholder="輸入站名（模糊）">
+  <datalist id="stations"></datalist>
+
+  <label>責任區</label><input id="area" disabled>
+  <label>總車位</label><input id="cap" disabled>
+
+  <label>5點</label><input id="v5" type="number" value="0">
+
+  <label>10–15</label><input id="x" type="number" value="0">
+  <label>21–24</label><input id="y" type="number" value="0">
+
+  <button onclick="update()">更新圖表</button>
+  <button onclick="solveAuto()">自動求解</button>
+  <button onclick="exportExcel()">匯出 Excel (v3.2)</button>
 </div>
 
 <div class="main">
-<div class="panel"><canvas id="chart" height="420"></canvas></div>
-<div class="panel">
-<div id="summary" class="summary">請輸入場站</div>
-<table>
-<thead><tr><th>時間</th><th>在站</th></tr></thead>
-<tbody id="tbody"></tbody>
-</table>
-</div>
+  <div class="panel">
+    <canvas id="chart" height="420"></canvas>
+  </div>
+  <div class="panel">
+    <div id="summary" class="summary">請輸入場站</div>
+    <table>
+      <thead><tr><th>時間</th><th>在站</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
 let DB=[], chart=null;
 const H=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
 
-fetch("default_db.json").then(r=>r.json()).then(j=>DB=j);
+fetch("default_db.json",{cache:"no-store"})
+.then(r=>r.json())
+.then(j=>{
+  DB=j;
+  const dl=document.getElementById("stations");
+  DB.forEach(s=>{
+    const o=document.createElement("option");
+    o.value=s.station;
+    dl.appendChild(o);
+  });
+});
 
 function findStation(q){
- return DB.find(s=>s.station.includes(q));
+  return DB.find(s=>s.station.includes(q));
 }
 
 function calc(st,v5,x,y){
- return H.map(h=>{
-   let v=(h===5?v5:0)+(st.deltas[h]||0);
-   if(h>=15)v+=x;
-   if(h>=21)v+=y;
-   return v;
- });
+  return H.map(h=>{
+    let v=(h===5?v5:0)+(st.deltas?.[h]||0);
+    if(h>=15) v+=x;      // 10–15 影響 15–23
+    if(h>=21) v+=y;      // 21–24 影響 21–23
+    return v;
+  });
 }
 
 function compliantHours(st,vals){
- let c=0;
- for(let i=1;i<vals.length;i++){
-   if(vals[i]>=1 && vals[i]<=st.capacity-1)c++;
- }
- return c;
+  let c=0;
+  for(let i=1;i<vals.length;i++){
+    if(vals[i]>=1 && vals[i]<=st.capacity-1) c++;
+  }
+  return c;
 }
 
 function feasible(st,vals){
- for(let i=1;i<vals.length;i++){
-   if(vals[i]<1||vals[i]>st.capacity-1)return false;
- }
- return true;
-}
-
-/* ===== 解法 ===== */
-function solveBest(st){
- for(let v5=0;v5<=st.capacity;v5++){
-   const vals=calc(st,v5,0,0);
-   if(feasible(st,vals))return{type:"最佳解",v5,x:0,y:0,vals};
- }
- return null;
-}
-
-function solveSecond(st){
- for(let v5=0;v5<=st.capacity;v5++){
-   for(let x=-56;x<=56;x++){
-     for(let y=-56;y<=56;y++){
-       const vals=calc(st,v5,x,y);
-       if(feasible(st,vals))return{type:"次佳解",v5,x,y,vals};
-     }
-   }
- }
- return null;
-}
-
-function solveLast(st){
- let best=null;
- for(let v5=0;v5<=st.capacity;v5++){
-   for(let x=-200;x<=200;x++){
-     for(let y=-200;y<=200;y++){
-       const vals=calc(st,v5,x,y);
-       const ok=compliantHours(st,vals);
-       if(!best||ok>best.ok){
-         best={type:"最後解",v5,x,y,vals,ok};
-       }
-     }
-   }
- }
- return best;
+  for(let i=1;i<vals.length;i++){
+    if(vals[i]<1 || vals[i]>st.capacity-1) return false;
+  }
+  return true;
 }
 
 function solveAuto(){
- const st=findStation(station.value);
- if(!st)return alert("找不到場站");
- let sol=solveBest(st)||solveSecond(st)||solveLast(st);
- render(st,sol);
+  const st=findStation(station.value);
+  if(!st){ alert("找不到場站"); return; }
+
+  area.value=st.area;
+  cap.value=st.capacity;
+
+  let sol=null;
+
+  // 最佳解
+  for(let v5=0;v5<=st.capacity && !sol;v5++){
+    const vals=calc(st,v5,0,0);
+    if(feasible(st,vals)) sol={type:"最佳解",v5,x:0,y:0,vals};
+  }
+
+  // 次佳解
+  if(!sol){
+    for(let v5=0;v5<=st.capacity && !sol;v5++){
+      for(let x=-56;x<=56 && !sol;x++){
+        for(let y=-56;y<=56 && !sol;y++){
+          const vals=calc(st,v5,x,y);
+          if(feasible(st,vals)) sol={type:"次佳解",v5,x,y,vals};
+        }
+      }
+    }
+  }
+
+  // 最後解
+  if(!sol){
+    let best=null;
+    for(let v5=0;v5<=st.capacity;v5++){
+      for(let x=-300;x<=300;x++){
+        for(let y=-300;y<=300;y++){
+          const vals=calc(st,v5,x,y);
+          const ok=compliantHours(st,vals);
+          if(!best || ok>best.ok){
+            best={type:"最後解",v5,x,y,vals,ok};
+          }
+        }
+      }
+    }
+    sol=best;
+  }
+
+  render(st,sol);
 }
 
-/* ===== UI ===== */
 function update(){
- const st=findStation(station.value);
- if(!st)return;
- const sol={
-   type:"手動",
-   v5:+v5.value,
-   x:+x.value,
-   y:+y.value,
-   vals:calc(st,+v5.value,+x.value,+y.value)
- };
- render(st,sol);
+  const st=findStation(station.value);
+  if(!st) return;
+  render(st,{
+    type:"手動",
+    v5:+v5.value,
+    x:+x.value,
+    y:+y.value,
+    vals:calc(st,+v5.value,+x.value,+y.value)
+  });
 }
 
 function render(st,sol){
- area.value=st.area; cap.value=st.capacity;
- drawChart(st,sol.vals);
- tbody.innerHTML="";
- sol.vals.forEach((v,i)=>{
-   const tr=document.createElement("tr");
-   if(i>0&&(v<1||v>st.capacity-1))tr.className="bad";
-   tr.innerHTML=`<td>${H[i]}</td><td>${v}</td>`;
-   tbody.appendChild(tr);
- });
- summary.textContent=
-   `${sol.type}｜5=${sol.v5}｜10–15=${sol.x}｜21–24=${sol.y}
-合規小時數(6–23)：${compliantHours(st,sol.vals)}`;
+  const ctx=document.getElementById("chart").getContext("2d");
+  if(chart) chart.destroy();
+  chart=new Chart(ctx,{
+    type:"line",
+    data:{
+      labels:H,
+      datasets:[
+        {label:st.station,data:sol.vals,borderColor:"green"},
+        {label:"上限",data:H.map(()=>st.capacity-1),borderDash:[6,4],borderColor:"red"},
+        {label:"下限",data:H.map(()=>1),borderColor:"orange"}
+      ]
+    }
+  });
+
+  tbody.innerHTML="";
+  sol.vals.forEach((v,i)=>{
+    const tr=document.createElement("tr");
+    if(i>0 && (v<1 || v>st.capacity-1)) tr.className="bad";
+    tr.innerHTML=`<td>${H[i]}</td><td>${v}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  summary.textContent=
+`${sol.type}
+5點=${sol.v5}｜10–15=${sol.x}｜21–24=${sol.y}
+合規小時數：${compliantHours(st,sol.vals)}`;
 }
 
-function drawChart(st,vals){
- if(chart)chart.destroy();
- chart=new Chart(chartCtx,{
-  type:"line",
-  data:{
-    labels:H,
-    datasets:[
-     {label:st.station,data:vals,borderColor:"green",tension:.3},
-     {label:"上限",data:H.map(()=>st.capacity-1),borderDash:[6,4],borderColor:"red"},
-     {label:"下限",data:H.map(()=>1),borderColor:"orange"}
-    ]
-  },
-  options:{responsive:true}
- });
-}
-
-/* ===== Excel v3.2 ===== */
 function exportExcel(){
- const best=[],second=[],last=[];
- DB.forEach(st=>{
-   const sol=solveBest(st)||solveSecond(st)||solveLast(st);
-   const row={
-     場站:st.station,
-     責任區:st.area,
-     總車位:st.capacity,
-     "5點":sol.v5,
-     "10–15":sol.x,
-     "21–24":sol.y,
-     "6–23合規小時數":compliantHours(st,sol.vals)
-   };
-   if(sol.type==="最佳解")best.push(row);
-   else if(sol.type==="次佳解")second.push(row);
-   else last.push({...row,"為何只能最後解":
-     !solveBest(st)?"5點配置無法避免結構性超載":
-     !solveSecond(st)?"±56調度仍無法全時段合規":
-     "需大幅調度才能壓回區間"
-   });
- });
- const wb=XLSX.utils.book_new();
- if(best.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(best),"最佳解");
- if(second.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(second),"次佳解");
- if(last.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(last),"最後解");
- XLSX.writeFile(wb,"YouBike_v3.2.xlsx");
+  const wb=XLSX.utils.book_new();
+  const best=[], second=[], last=[];
+
+  DB.forEach(st=>{
+    let sol=null;
+
+    for(let v5=0;v5<=st.capacity && !sol;v5++){
+      const vals=calc(st,v5,0,0);
+      if(feasible(st,vals)) sol={type:"最佳解",v5,x:0,y:0,vals};
+    }
+
+    if(!sol){
+      for(let v5=0;v5<=st.capacity && !sol;v5++){
+        for(let x=-56;x<=56 && !sol;x++){
+          for(let y=-56;y<=56 && !sol;y++){
+            const vals=calc(st,v5,x,y);
+            if(feasible(st,vals)) sol={type:"次佳解",v5,x,y,vals};
+          }
+        }
+      }
+    }
+
+    if(!sol){
+      let b=null;
+      for(let v5=0;v5<=st.capacity;v5++){
+        for(let x=-300;x<=300;x++){
+          for(let y=-300;y<=300;y++){
+            const vals=calc(st,v5,x,y);
+            const ok=compliantHours(st,vals);
+            if(!b || ok>b.ok) b={v5,x,y,vals,ok};
+          }
+        }
+      }
+      sol={type:"最後解",...b};
+    }
+
+    const row={
+      場站:st.station,
+      責任區:st.area,
+      總車位:st.capacity,
+      "5點":sol.v5,
+      "10–15":sol.x,
+      "21–24":sol.y,
+      合規小時數:compliantHours(st,sol.vals),
+      為何只能最後解: sol.type==="最後解" ? "結構性尖峰超過車位限制" : ""
+    };
+
+    if(sol.type==="最佳解") best.push(row);
+    else if(sol.type==="次佳解") second.push(row);
+    else last.push(row);
+  });
+
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(best),"最佳解");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(second),"次佳解");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(last),"最後解");
+  XLSX.writeFile(wb,"YouBike_v3.2.xlsx");
 }
 </script>
 </body>
