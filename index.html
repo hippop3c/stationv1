@@ -1,755 +1,168 @@
 <!doctype html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>YouBike 每小時在站車輛數（最終穩定版 v3.2）</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>YouBike 每小時在站車輛數（最終穩定版 v3.3）</title>
 
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- SheetJS for Excel export -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
 
-  <style>
-    :root{
-      --border:#cfd7e3;
-      --muted:#6b7280;
-      --panel:#f8fafc;
-      --good:#2e7d32;
-      --badbg:#fde2e2;
-      --red:#d32f2f;
-      --orange:#f59e0b;
-      --green:#0a7a1f;
-    }
-    body{
-      font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",Arial,sans-serif;
-      margin:18px;
-      color:#111827;
-      background:#fff;
-    }
-    h1{
-      margin:0 0 12px 0;
-      font-size:34px;
-      font-weight:900;
-      letter-spacing:.2px;
-    }
-
-    /* ===== controls ===== */
-    .controls{
-      border:1px solid var(--border);
-      border-radius:10px;
-      padding:12px 12px 10px 12px;
-
-      display:grid;
-      grid-template-columns:
-        70px 260px   /* 場站 */
-        70px 90px    /* 責任區 */
-        70px 90px    /* 總車位 */
-        50px 80px    /* 5點 */
-        70px 90px    /* 10-15 */
-        70px 90px    /* 21-24 */
-        auto;        /* buttons */
-      gap:10px 10px;
-      align-items:center;
-    }
-    label{
-      font-size:16px;
-      font-weight:800;
-      text-align:right;
-      white-space:nowrap;
-    }
-    input{
-      height:34px;
-      border:1px solid var(--border);
-      border-radius:6px;
-      padding:0 10px;
-      font-size:16px;
-      outline:none;
-    }
-    input:disabled{ background:#f3f4f6; color:#374151; }
-
-    .btns{
-      display:flex;
-      gap:10px;
-      justify-content:flex-end;
-      align-items:center;
-    }
-    button{
-      height:36px;
-      border:1px solid #9aa4b2;
-      background:#f5f5f5;
-      border-radius:6px;
-      padding:0 14px;
-      font-size:14px;
-      font-weight:900;
-      cursor:pointer;
-      white-space:nowrap;
-    }
-    button.primary{ background:#eaf2ff; border-color:#7aa2ff; }
-
-    .meta{
-      grid-column: 1 / -1;
-      display:flex;
-      gap:14px;
-      align-items:center;
-      color:var(--muted);
-      font-size:13px;
-      font-weight:800;
-      margin-top:2px;
-    }
-
-    /* ===== main ===== */
-    .main{
-      margin-top:14px;
-      display:grid;
-      grid-template-columns: 2fr 1fr;
-      gap:14px;
-      align-items:stretch;
-    }
-    .panel{
-      border:1px solid var(--border);
-      border-radius:10px;
-      background:#fff;
-      padding:10px 12px;
-      min-height:560px;
-      display:flex;
-      flex-direction:column;
-    }
-    .chartWrap{ flex:1; min-height:520px; }
-    canvas{ width:100%!important; height:100%!important; }
-
-    .right{ display:flex; flex-direction:column; }
-    .summary{
-      background: var(--panel);
-      border-left:6px solid var(--good);
-      border-radius:8px;
-      padding:10px 12px;
-      margin-bottom:10px;
-      font-size:18px;
-      font-weight:900;
-      line-height:1.35;
-      white-space:pre-line;
-    }
-    .summary small{
-      display:block;
-      margin-top:6px;
-      font-size:13px;
-      font-weight:800;
-      color:var(--muted);
-    }
-    .tableWrap{
-      border:1px solid var(--border);
-      border-radius:10px;
-      overflow:hidden;
-      flex:1;
-      min-height:0;
-      display:flex;
-      flex-direction:column;
-    }
-    table{ width:100%; border-collapse:collapse; font-size:16px; }
-    thead th{
-      position:sticky; top:0; z-index:2;
-      background:#fff;
-      font-weight:900;
-      padding:10px 6px;
-      border-bottom:1px solid var(--border);
-      font-size:16px;
-    }
-    tbody{ display:block; overflow:auto; flex:1; }
-    thead, tbody tr{ display:table; width:100%; table-layout:fixed; }
-    td{
-      border-top:1px solid var(--border);
-      padding:6px 6px;
-      text-align:center;
-      font-weight:800;
-    }
-    tr.bad{ background:var(--badbg); }
-
-    @media (max-width: 1100px){
-      .controls{ grid-template-columns: 70px 1fr; }
-      label{ text-align:left; }
-      .btns{ justify-content:flex-start; }
-      .main{ grid-template-columns: 1fr; }
-      .panel{ min-height:520px; }
-    }
-  </style>
+<style>
+body{font-family:system-ui,-apple-system,"Segoe UI","Noto Sans TC",Arial;margin:16px}
+h1{font-size:28px;margin-bottom:10px}
+.controls{border:1px solid #ccc;border-radius:8px;padding:10px;display:grid;
+grid-template-columns:80px 220px 80px 80px 80px 80px 80px 80px auto;gap:8px;align-items:center}
+label{font-weight:700;text-align:right}
+input{height:32px}
+button{height:34px;font-weight:700}
+.main{margin-top:12px;display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.panel{border:1px solid #ccc;border-radius:8px;padding:8px;min-height:520px}
+.summary{background:#f1f5f9;border-left:6px solid #2e7d32;padding:8px;font-weight:800}
+table{width:100%;border-collapse:collapse}
+th,td{border:1px solid #ddd;padding:4px;text-align:center}
+tr.bad{background:#fde2e2}
+canvas{width:100%!important;height:480px!important}
+</style>
 </head>
 
 <body>
-  <h1>YouBike 每小時在站車輛數（最終穩定版 v3.2）</h1>
+<h1>YouBike 每小時在站車輛數（最終穩定版 v3.3）</h1>
 
-  <div class="controls">
-    <label for="stationInput">場站</label>
-    <input id="stationInput" list="stationList" placeholder="可輸入關鍵字模糊搜尋，例如：信義敦化" />
-    <datalist id="stationList"></datalist>
+<div class="controls">
+<label>場站</label><input id="station"/>
+<label>責任區</label><input id="area" disabled/>
+<label>車位</label><input id="cap" disabled/>
+<label>5點</label><input id="v5" type="number" value="0"/>
+<label>10-15</label><input id="d1015" type="number" value="0"/>
+<label>21-24</label><input id="d2124" type="number" value="0"/>
+<button id="btnUpdate">更新圖表</button>
+<button id="btnAuto">自動求解</button>
+<button id="btnExcel">匯出 Excel</button>
+</div>
 
-    <label>責任區</label>
-    <input id="areaInput" disabled />
-
-    <label>總車位</label>
-    <input id="capInput" disabled />
-
-    <label for="v5">5點</label>
-    <input id="v5" type="number" value="0" />
-
-    <label for="d1015">10–15</label>
-    <input id="d1015" type="number" value="0" />
-
-    <label for="d2124">21–24</label>
-    <input id="d2124" type="number" value="0" />
-
-    <div class="btns">
-      <button class="primary" id="btnUpdate">更新圖表</button>
-      <button id="btnAuto">自動求解</button>
-      <button id="btnExcel">匯出 Excel (v3.2)</button>
-    </div>
-
-    <div class="meta">
-      <span id="dbInfo">資料來源：default_db.json（載入中…）</span>
-      <span id="status"></span>
-    </div>
-  </div>
-
-  <div class="main">
-    <div class="panel">
-      <div class="chartWrap">
-        <canvas id="chart"></canvas>
-      </div>
-    </div>
-
-    <div class="panel right">
-      <div id="summary" class="summary">請輸入場站</div>
-      <div class="tableWrap">
-        <table>
-          <thead>
-            <tr><th>時間</th><th>在站</th></tr>
-          </thead>
-          <tbody id="tbody"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+<div class="main">
+<div class="panel"><canvas id="chart"></canvas></div>
+<div class="panel">
+<div id="summary" class="summary">請輸入場站</div>
+<table>
+<thead><tr><th>時間</th><th>在站</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+</div>
 
 <script>
-/* ===========================
-   Data + constants
-=========================== */
-let DB = [];
-let chart = null;
+let DB=[],chart;
+const HOURS=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
 
-const HOURS = Array.from({length: 19}, (_,i)=> i+5);   // 5..23
-const CHECK_HOURS = Array.from({length: 18}, (_,i)=> i+6); // 6..23
-
-// 合規上下限：介於 1 與 (車位-1)
-function bounds(cap){
-  const lo = 1;
-  const hi = Math.max(1, cap - 1);
-  return [lo, hi];
+function fuzzy(name){
+  const hits=DB.filter(s=>s.station.includes(name));
+  hits.sort((a,b)=>a.station.length-b.station.length);
+  return hits[0]||null;
 }
 
-const $ = (id)=>document.getElementById(id);
-
-const stationInput = $("stationInput");
-const areaInput = $("areaInput");
-const capInput = $("capInput");
-const v5Input = $("v5");
-const d1015Input = $("d1015");
-const d2124Input = $("d2124");
-const summaryEl = $("summary");
-const tbody = $("tbody");
-const dbInfo = $("dbInfo");
-const statusEl = $("status");
-const stationList = $("stationList");
-
-function toInt(x, fallback=0){
-  const n = Number(x);
-  return Number.isFinite(n) ? Math.trunc(n) : fallback;
-}
-function normalize(s){ return String(s||"").trim(); }
-
-/* 模糊搜尋：包含就算命中，若多筆命中，取最短 station（較精準） */
-function findStationByFuzzy(name){
-  const q = normalize(name);
-  if(!q) return null;
-  const hits = DB.filter(r => (r.station||"").includes(q));
-  if(hits.length===0) return null;
-  hits.sort((a,b)=> (a.station.length - b.station.length));
-  return hits[0];
+// v3.3 核心計算
+function calc(st,v5,d1015,d2124){
+  return HOURS.map(h=>{
+    let v=v5+(st.deltas[h]||0);
+    if(h>=15 && h<=23) v+=d1015;
+    if(h>=21 && h<=23) v+=d2124;
+    return v;
+  });
 }
 
-function getDelta(st, hour){
-  const v = st.deltas?.[String(hour)];
-  return (typeof v === "number") ? v : 0;
+function render(st,v5,d1015,d2124,label){
+  const vals=calc(st,v5,d1015,d2124);
+  document.getElementById("area").value=st.area;
+  document.getElementById("cap").value=st.capacity;
+  const tb=document.getElementById("tbody");tb.innerHTML="";
+  vals.forEach((v,i)=>{
+    const tr=document.createElement("tr");
+    if(i>0 && (v<1||v>st.capacity-1)) tr.className="bad";
+    tr.innerHTML=`<td>${HOURS[i]}</td><td>${v}</td>`;
+    tb.appendChild(tr);
+  });
+  document.getElementById("summary").textContent=
+    `${label} 5=${v5}｜10-15=${d1015}｜21-24=${d2124}`;
+  draw(st,vals);
 }
 
-/*
-  ✅ 正確公式（你最新規格）
-  - 5點：在站(5) = v5
-  - 6..23：在站(h) = delta[h] + (h>=15 ? X : 0) + (h>=21 ? Y : 0)
-  * v5 不加到 6..23（這就是你前面一直抓到的錯）
-*/
-function calcSeries(st, v5, X, Y){
-  const vals = [];
-  for(const h of HOURS){
-    if(h === 5){
-      vals.push(v5);
-    }else{
-      let v = getDelta(st, h);
-      if(h >= 15) v += X;     // 10-15 影響 15-23
-      if(h >= 21) v += Y;     // 21-24 影響 21-23（圖只到23）
-      vals.push(v);
+function draw(st,vals){
+  if(chart) chart.destroy();
+  chart=new Chart(document.getElementById("chart"),{
+    type:"line",
+    data:{labels:HOURS,datasets:[
+      {label:st.station,data:vals,borderColor:"green",tension:.3},
+      {label:"上限",data:HOURS.map(()=>st.capacity-1),
+       borderColor:"red",borderDash:[5,5]},
+      {label:"下限",data:HOURS.map(()=>1),borderColor:"orange"}
+    ]}
+  });
+}
+
+// v3.3 解法
+function solve(st){
+  // 最佳解
+  for(let v5=0;v5<=st.capacity;v5++){
+    const vals=calc(st,v5,0,0);
+    if(vals.slice(1).every(v=>v>=1&&v<=st.capacity-1))
+      return {k:"最佳解",v5,d1015:0,d2124:0};
+  }
+  // 次佳解
+  for(let d=-56;d<=56;d++){
+    for(let v5=0;v5<=st.capacity;v5++){
+      const vals=calc(st,v5,d,0);
+      if(vals.slice(1).every(v=>v>=1&&v<=st.capacity-1))
+        return {k:"次佳解",v5,d1015:d,d2124:0};
     }
   }
-  return vals;
-}
-
-function compliantHoursCount(st, vals){
-  const cap = st.capacity;
-  const [lo, hi] = bounds(cap);
-  let ok = 0;
-  for(let i=1;i<vals.length;i++){ // 6..23
-    const v = vals[i];
-    if(v >= lo && v <= hi) ok++;
-  }
-  return ok;
-}
-function allCompliant(st, vals){
-  return compliantHoursCount(st, vals) === 18;
-}
-
-/* ===========================
-   Solve logic (v3.2)
-   Best > Second > Last
-=========================== */
-
-/*
-  最佳解：X=0, Y=0 且 6..23 全合規
-  v5 只需要 >=0（不影響 6..23），這裡固定給 0
-*/
-function solveBest(st){
-  const v5 = 0;
-  const X = 0, Y = 0;
-  const vals = calcSeries(st, v5, X, Y);
-  if(allCompliant(st, vals)){
-    return { kind:"最佳解", v5, X, Y, vals, reason:"不需調度即可全時段合規", okHours:18 };
-  }
-  return null;
-}
-
-/*
-  次佳解：X,Y ∈ [-56,56] 且 6..23 全合規
-  找到後：優先最小 |X|+|Y|
-*/
-function solveSecond(st){
-  const v5 = 0;
-  const cap = st.capacity;
-  const [lo, hi] = bounds(cap);
-
-  let best = null;
-
-  for(let X=-56; X<=56; X++){
-    for(let Y=-56; Y<=56; Y++){
-      const vals = calcSeries(st, v5, X, Y);
-      if(!allCompliant(st, vals)) continue;
-
-      const score = Math.abs(X) + Math.abs(Y);
-      if(!best || score < best.score){
-        best = {
-          kind:"次佳解", v5, X, Y, vals,
-          score,
-          okHours:18,
-          reason:"需在允許調度範圍內（±56）才能全時段合規"
-        };
+  // 最後解
+  let best=null,bestOk=-1;
+  for(let d1=-st.capacity;d1<=st.capacity;d1++){
+    for(let d2=-st.capacity;d2<=st.capacity;d2++){
+      for(let v5=0;v5<=st.capacity;v5++){
+        const vals=calc(st,v5,d1,d2);
+        const ok=vals.slice(1).filter(v=>v>=1&&v<=st.capacity-1).length;
+        if(ok>bestOk){
+          bestOk=ok;
+          best={k:"最後解",v5,d1015:d1,d2124:d2};
+        }
       }
     }
   }
   return best;
 }
 
-/*
-  最後解：不限制 X,Y，目標「最大化合規小時數」
-  * 這裡用「斷點候選」法，不暴力掃 huge range，避免你按一下就卡死。
-  * 對 6..14：不受 X,Y 影響，合規與否固定。
-  * 對 15..20：只受 X 影響。
-  * 對 21..23：受 X+Y 影響（S = X+Y）。
-  => 我們分別找 X 與 S 的最佳值，再回推 Y = S - X
-*/
-function solveLast(st){
-  const v5 = 0;
-  const cap = st.capacity;
-  const [lo, hi] = bounds(cap);
-
-  // 固定部分：6..14
-  let fixedOK = 0;
-  for(let h=6; h<=14; h++){
-    const v = getDelta(st, h);
-    if(v >= lo && v <= hi) fixedOK++;
-  }
-
-  // build intervals for X (15..20)
-  const XIntervals = [];
-  for(let h=15; h<=20; h++){
-    const d = getDelta(st, h);
-    XIntervals.push([lo - d, hi - d]); // X must be within this interval for hour h ok
-  }
-
-  // build intervals for S=X+Y (21..23)
-  const SIntervals = [];
-  for(let h=21; h<=23; h++){
-    const d = getDelta(st, h);
-    SIntervals.push([lo - d, hi - d]); // S must be within interval for hour h ok
-  }
-
-  function candidateFromIntervals(intervals){
-    const cand = new Set();
-    // add endpoints and nearby integers
-    intervals.forEach(([a,b])=>{
-      for(const t of [a,b]){
-        for(const v of [Math.floor(t)-1, Math.floor(t), Math.ceil(t), Math.ceil(t)+1]){
-          cand.add(v);
-        }
-      }
-      // midpoint as well
-      const mid = (a+b)/2;
-      for(const v of [Math.floor(mid), Math.ceil(mid)]) cand.add(v);
-    });
-    // always include 0
-    cand.add(0);
-    return Array.from(cand).filter(Number.isFinite);
-  }
-
-  const Xcand = candidateFromIntervals(XIntervals);
-  const Scand = candidateFromIntervals(SIntervals);
-
-  function countOKForX(X){
-    let ok = 0;
-    for(let i=0;i<XIntervals.length;i++){
-      const [a,b] = XIntervals[i];
-      if(X >= a && X <= b) ok++;
-    }
-    return ok; // hours 15..20 (6 hours)
-  }
-  function countOKForS(S){
-    let ok = 0;
-    for(let i=0;i<SIntervals.length;i++){
-      const [a,b] = SIntervals[i];
-      if(S >= a && S <= b) ok++;
-    }
-    return ok; // hours 21..23 (3 hours)
-  }
-
-  // pick best X
-  let bestX = 0;
-  let bestXok = -1;
-  let bestXabs = Infinity;
-  for(const X of Xcand){
-    const ok = countOKForX(X);
-    const abs = Math.abs(X);
-    if(ok > bestXok || (ok===bestXok && abs < bestXabs)){
-      bestXok = ok; bestX = X; bestXabs = abs;
-    }
-  }
-
-  // pick best S
-  let bestS = 0;
-  let bestSok = -1;
-  let bestSabs = Infinity;
-  for(const S of Scand){
-    const ok = countOKForS(S);
-    const abs = Math.abs(S);
-    if(ok > bestSok || (ok===bestSok && abs < bestSabs)){
-      bestSok = ok; bestS = S; bestSabs = abs;
-    }
-  }
-
-  const X = bestX;
-  const Y = bestS - bestX;
-
-  const vals = calcSeries(st, v5, X, Y);
-  const okHours = compliantHoursCount(st, vals);
-
-  // 中文原因：為何只能最後解
-  let reason = "";
-  if(okHours === 18){
-    reason = "雖然不限制調度，但已找到可全時段合規的組合";
-  }else{
-    // 6..14 是硬限制（調度影響不到），如果這段已違規，就不可能達到 18
-    let earlyBad = 0;
-    for(let h=6; h<=14; h++){
-      const v = getDelta(st, h);
-      if(!(v>=lo && v<=hi)) earlyBad++;
-    }
-    if(earlyBad > 0){
-      reason = `因 6–14 點有 ${earlyBad} 小時先天超限（調度無法影響），只能最大化合規小時數`;
-    }else{
-      reason = "需用不受限調度才能提高合規小時數，但仍無法完全合規";
-    }
-  }
-
-  return { kind:"最後解", v5, X, Y, vals, okHours, reason };
-}
-
-function solveAuto(st){
-  const best = solveBest(st);
-  if(best) return best;
-  const second = solveSecond(st);
-  if(second) return second;
-  return solveLast(st);
-}
-
-/* ===========================
-   Render
-=========================== */
-function renderSolution(st, sol){
-  areaInput.value = st.area ?? "";
-  capInput.value = st.capacity ?? "";
-
-  v5Input.value = sol.v5;
-  d1015Input.value = sol.X;
-  d2124Input.value = sol.Y;
-
-  const vals = sol.vals;
-  const cap = st.capacity;
-  const [lo, hi] = bounds(cap);
-
-  // table
-  tbody.innerHTML = "";
-  for(let i=0;i<HOURS.length;i++){
-    const h = HOURS[i];
-    const v = vals[i];
-    const tr = document.createElement("tr");
-    if(h>=6 && (v < lo || v > hi)) tr.className = "bad";
-    tr.innerHTML = `<td>${h}</td><td>${v}</td>`;
-    tbody.appendChild(tr);
-  }
-
-  // summary
-  summaryEl.innerHTML =
-    `${sol.kind}\n` +
-    `5點=${sol.v5}｜10–15=${sol.X}｜21–24=${sol.Y}\n` +
-    `合規小時數：${sol.okHours}\n` +
-    `<small>合規區間：${lo}～${hi}（檢查 6–23）｜原因：${sol.reason}</small>`;
-
-  drawChart(st, vals);
-}
-
-function drawChart(st, vals){
-  const cap = st.capacity;
-  const [lo, hi] = bounds(cap);
-
-  const upper = HOURS.map(()=>hi);
-  const lower = HOURS.map(()=>lo);
-
-  // y range：避免空白（你截圖那種「看不到線」多半是 min/max 算壞）
-  const all = vals.concat(upper).concat(lower);
-  let yMin = Math.min(...all);
-  let yMax = Math.max(...all);
-  if(yMin === yMax){ yMin -= 1; yMax += 1; }
-
-  if(chart) chart.destroy();
-  chart = new Chart($("chart"), {
-    type:"line",
-    data:{
-      labels:HOURS,
-      datasets:[
-        {
-          label: st.station,
-          data: vals,
-          borderColor: getComputedStyle(document.documentElement).getPropertyValue("--green").trim() || "green",
-          borderWidth: 2.5,
-          pointRadius: 3,
-          pointHoverRadius: 4,
-          tension: 0.25
-        },
-        {
-          label: "上限",
-          data: upper,
-          borderColor: getComputedStyle(document.documentElement).getPropertyValue("--red").trim() || "red",
-          borderWidth: 2,
-          borderDash:[6,4],
-          pointRadius: 2
-        },
-        {
-          label: "下限",
-          data: lower,
-          borderColor: getComputedStyle(document.documentElement).getPropertyValue("--orange").trim() || "orange",
-          borderWidth: 2,
-          pointRadius: 2
-        }
-      ]
-    },
-    options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      interaction:{ mode:"index", intersect:false },
-      plugins:{
-        legend:{ position:"top", labels:{ boxWidth:34, font:{ size:14, weight:"800" } } },
-        tooltip:{ enabled:true }
-      },
-      scales:{
-        x:{ ticks:{ font:{ size:12 } } },
-        y:{
-          min: Math.floor(yMin),
-          max: Math.ceil(yMax),
-          ticks:{ font:{ size:12 } }
-        }
-      }
-    }
+// events
+document.getElementById("btnUpdate").onclick=()=>{
+  const st=fuzzy(station.value); if(!st) return;
+  render(st,+v5.value,+d1015.value,+d2124.value,"手動");
+};
+document.getElementById("btnAuto").onclick=()=>{
+  const st=fuzzy(station.value); if(!st) return;
+  const sol=solve(st);
+  render(st,sol.v5,sol.d1015,sol.d2124,sol.k);
+};
+document.getElementById("btnExcel").onclick=()=>{
+  const rowsBest=[],rowsSecond=[],rowsLast=[];
+  DB.forEach(st=>{
+    const sol=solve(st);
+    const row={站名:st.station,責任區:st.area,車位:st.capacity,
+      五點:sol.v5,"10-15":sol.d1015,"21-24":sol.d2124};
+    if(sol.k==="最佳解") rowsBest.push(row);
+    else if(sol.k==="次佳解") rowsSecond.push(row);
+    else rowsLast.push(row);
   });
-}
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rowsBest),"最佳解");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rowsSecond),"次佳解");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rowsLast),"最後解");
+  XLSX.writeFile(wb,"YouBike_v3.3.xlsx");
+};
 
-/* ===========================
-   Actions
-=========================== */
-function getSelectedStation(){
-  const st = findStationByFuzzy(stationInput.value);
-  if(!st){
-    statusEl.textContent = "找不到場站（可模糊搜尋），請輸入更完整關鍵字。";
-    return null;
-  }
-  statusEl.textContent = "";
-  return st;
-}
-
-function updateManual(){
-  const st = getSelectedStation();
-  if(!st) return;
-
-  const v5 = Math.max(0, toInt(v5Input.value, 0));
-  const X  = toInt(d1015Input.value, 0);
-  const Y  = toInt(d2124Input.value, 0);
-  const vals = calcSeries(st, v5, X, Y);
-
-  const sol = {
-    kind:"手動",
-    v5, X, Y,
-    vals,
-    okHours: compliantHoursCount(st, vals),
-    reason:"手動輸入顯示"
-  };
-  renderSolution(st, sol);
-}
-
-function clickAuto(){
-  const st = getSelectedStation();
-  if(!st) return;
-  statusEl.textContent = "求解中…";
-  setTimeout(()=>{
-    const sol = solveAuto(st);
-    renderSolution(st, sol);
-    statusEl.textContent = "";
-  }, 10);
-}
-
-/* Excel export (三張 sheet：最佳/次佳/最後) */
-function exportExcel(){
-  if(!DB.length){
-    alert("DB 尚未載入完成，請稍後再試。");
-    return;
-  }
-  statusEl.textContent = "匯出中…";
-
-  setTimeout(()=>{
-    const bestRows = [];
-    const secondRows = [];
-    const lastRows = [];
-
-    for(const st of DB){
-      if(!st || typeof st.capacity !== "number") continue;
-
-      const best = solveBest(st);
-      if(best){
-        bestRows.push(rowFromSol(st, best));
-        continue;
-      }
-
-      const second = solveSecond(st);
-      if(second){
-        secondRows.push(rowFromSol(st, second));
-        continue;
-      }
-
-      const last = solveLast(st);
-      lastRows.push(rowFromSol(st, last));
-    }
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bestRows), "最佳解");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(secondRows), "次佳解");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(lastRows), "最後解");
-
-    XLSX.writeFile(wb, "YouBike_最終穩定版_v3.2_解集.xlsx");
-    statusEl.textContent = "";
-  }, 20);
-}
-
-function rowFromSol(st, sol){
-  const cap = st.capacity;
-  const [lo, hi] = bounds(cap);
-  return {
-    場站: st.station,
-    責任區: st.area,
-    總車位: cap,
-    "5點": sol.v5,
-    "10-15調度": sol.X,
-    "21-24調度": sol.Y,
-    合規小時數: sol.okHours,
-    合規區間: `${lo}～${hi}`,
-    為何只能最後解: sol.kind === "最後解" ? sol.reason : ""
-  };
-}
-
-/* ===========================
-   Wire events
-=========================== */
-$("btnUpdate").addEventListener("click", updateManual);
-$("btnAuto").addEventListener("click", clickAuto);
-$("btnExcel").addEventListener("click", exportExcel);
-
-// input typing: update station linkage
-let t = null;
-stationInput.addEventListener("input", ()=>{
-  clearTimeout(t);
-  t = setTimeout(()=>{
-    const st = findStationByFuzzy(stationInput.value);
-    if(st){
-      areaInput.value = st.area ?? "";
-      capInput.value = st.capacity ?? "";
-      statusEl.textContent = "";
-    }else{
-      areaInput.value = "";
-      capInput.value = "";
-      statusEl.textContent = "找不到場站（可模糊搜尋），請輸入更完整關鍵字。";
-    }
-  }, 120);
-});
-
-/* ===========================
-   Load DB
-=========================== */
-fetch("default_db.json", { cache:"no-store" })
-  .then(r=>{
-    if(!r.ok) throw new Error("default_db.json 載入失敗：" + r.status);
-    return r.json();
-  })
-  .then(j=>{
-    DB = Array.isArray(j) ? j : [];
-    dbInfo.textContent = `資料來源：default_db.json（${DB.length} 站）`;
-
-    // 填入 datalist（場站下拉）
-    stationList.innerHTML = "";
-    for(const st of DB){
-      const opt = document.createElement("option");
-      opt.value = st.station || "";
-      stationList.appendChild(opt);
-    }
-
-    summaryEl.textContent = "請輸入場站（可模糊搜尋），再按「更新圖表 / 自動求解」。";
-  })
-  .catch(err=>{
-    dbInfo.textContent = "資料來源：default_db.json（載入失敗）";
-    statusEl.textContent = String(err).slice(0,200);
-  });
+// load db
+fetch("default_db.json").then(r=>r.json()).then(j=>DB=j);
 </script>
 </body>
 </html>
