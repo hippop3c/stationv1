@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>YouBike 每小時在站車輛數（最終穩定版v1）</title>
+<title>YouBike 每小時在站車輛數（最終穩定版v2）</title>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
@@ -30,7 +30,7 @@ tr.bad{background:#fde2e2}
 </head>
 
 <body>
-<h1>YouBike 每小時在站車輛數（最終穩定版v1）</h1>
+<h1>YouBike 每小時在站車輛數（最終穩定版v2）</h1>
 
 <div class="controls">
 <label>場站</label><input id="station">
@@ -88,15 +88,8 @@ function calc(st,v5,d1015,d2124){
 function feasible(st,vals){
   return vals.slice(1).every(v=>v>=0&&v<=st.capacity);
 }
-function violation(st,vals){
-  return vals.slice(1).reduce((s,v)=>{
-    if(v<0)return s-v;
-    if(v>st.capacity)return s+v-st.capacity;
-    return s;
-  },0);
-}
 
-/* ===== 解法 ===== */
+/* ===== 解法（v2） ===== */
 function solveBest(st){
   for(let v5=0;v5<=st.capacity;v5++){
     const vals=calc(st,v5,0,0);
@@ -118,16 +111,21 @@ function solveSecond(st){
     }
   return best;
 }
+
+/* v2 最後解：最大化合法小時數 */
 function solveLast(st){
   let best=null;
   for(let d1=-st.capacity;d1<=st.capacity;d1++)
     for(let d2=-st.capacity;d2<=st.capacity;d2++)
       for(let v5=0;v5<=st.capacity;v5++){
         const vals=calc(st,v5,d1,d2);
-        const v=violation(st,vals);
-        const m=Math.abs(d1)+Math.abs(d2);
-        if(!best||v<best.v||(v===best.v&&m<best.m))
-          best={kind:"最後解",v5,d1015:d1,d2124:d2,vals,v,m};
+        let ok=0;
+        for(let i=1;i<vals.length;i++){
+          if(vals[i]>=0&&vals[i]<=st.capacity) ok++;
+        }
+        const mag=Math.abs(d1)+Math.abs(d2);
+        if(!best||ok>best.ok||(ok===best.ok&&mag<best.mag))
+          best={kind:"最後解",v5,d1015:d1,d2124:d2,vals,ok,mag};
       }
   return best;
 }
