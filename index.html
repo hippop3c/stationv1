@@ -1,92 +1,86 @@
 <!doctype html>
 <html lang="zh-Hant">
 <head>
-<meta charset="utf-8"/>
+<meta charset="utf-8">
 <title>YouBike 每小時在站車輛數（最終穩定版 v3.4）</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
 <style>
-body{font-family:Arial;margin:16px}
-h1{font-size:28px;margin-bottom:10px}
+body{font-family:sans-serif;margin:16px}
+h1{margin-bottom:10px}
 
-/* ===== 第一排：輸入 ===== */
-.controls{
-  display:grid;
-  grid-template-columns:
-    70px 240px
-    70px 80px
-    60px 80px
-    50px 70px
-    70px 80px
-    70px 80px;
-  gap:8px;
-  align-items:center;
+.top{
+  border:1px solid #ccc;
+  padding:10px;
+  border-radius:6px;
 }
-label{font-weight:bold;text-align:right}
-input{height:30px}
-
-/* ===== 第二排：按鈕 ===== */
-.buttons{
-  margin-top:8px;
+.row{
   display:flex;
-  gap:8px;
+  gap:12px;
+  align-items:center;
+  margin-bottom:8px;
+  flex-wrap:wrap;
 }
-button{height:32px;font-weight:bold}
+label{font-weight:700}
+input{height:30px;padding:0 6px}
+button{height:32px}
 
-/* ===== 主畫面 ===== */
 .main{
   margin-top:12px;
   display:grid;
   grid-template-columns:2fr 1fr;
   gap:12px;
 }
-.panel{border:1px solid #ccc;padding:8px}
-canvas{height:420px!important}
-
+.panel{
+  border:1px solid #ccc;
+  border-radius:6px;
+  padding:10px;
+}
 table{width:100%;border-collapse:collapse}
-th,td{border:1px solid #ccc;padding:4px;text-align:center}
-.bad{background:#fdd}
-.good{background:#dfd}
-.summary{font-weight:bold;margin-bottom:6px}
+th,td{border:1px solid #ddd;padding:4px;text-align:center}
+.bad{background:#fde2e2}
+canvas{height:420px!important}
 </style>
 </head>
 
 <body>
 <h1>YouBike 每小時在站車輛數（最終穩定版 v3.4）</h1>
 
-<!-- 第一排 -->
-<div class="controls">
-<label>場站</label><input id="station">
-<label>責任區</label><input id="area" disabled>
-<label>車位</label><input id="cap" disabled>
-<label>5點</label><input id="v5" type="number" value="0">
-<label>10–15</label><input id="d15" type="number" value="0">
-<label>21–24</label><input id="d21" type="number" value="0">
-</div>
+<div class="top">
+  <!-- 第一排：輸入 -->
+  <div class="row">
+    <label>場站</label><input id="station" style="width:220px">
+    <label>責任區</label><input id="area" disabled style="width:60px">
+    <label>車位</label><input id="cap" disabled style="width:60px">
+    <label>5點</label><input id="v5" type="number" value="0" style="width:60px">
+    <label>10–15</label><input id="d1015" type="number" value="0" style="width:60px">
+    <label>21–24</label><input id="d2124" type="number" value="0" style="width:60px">
+  </div>
 
-<!-- 第二排 -->
-<div class="buttons">
-<button onclick="updateManual()">更新圖表</button>
-<button onclick="autoSolve()">自動求解（v3.4）</button>
-<button onclick="exportExcel()">匯出 Excel（v3.4）</button>
+  <!-- 第二排：按鈕 -->
+  <div class="row">
+    <button onclick="manual()">更新圖表</button>
+    <button onclick="autoSolve()">自動求解 (v3.4)</button>
+  </div>
 </div>
 
 <div class="main">
-<div class="panel">
-<canvas id="chart"></canvas>
-</div>
-
-<div class="panel">
-<div id="summary" class="summary">請輸入場站</div>
-<table>
-<thead><tr><th>時間</th><th>在站</th></tr></thead>
-<tbody id="tbody"></tbody>
-</table>
-</div>
+  <div class="panel">
+    <canvas id="chart"></canvas>
+  </div>
+  <div class="panel">
+    <div id="summary" style="font-weight:700;margin-bottom:6px">請輸入場站</div>
+    <table>
+      <thead><tr><th>時間</th><th>在站</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
-let DB=[], chart;
 const HOURS=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
+let DB=[], chart=null;
 
 fetch("default_db.json").then(r=>r.json()).then(j=>DB=j);
 
@@ -94,103 +88,81 @@ function findStation(q){
   return DB.find(s=>s.station.includes(q));
 }
 
-function calc(st,v5,d15,d21){
+function calc(st,v5,d1015,d2124){
   return HOURS.map(h=>{
-    let v=st.deltas[h]??0;
-    v+=v5;
-    if(h>=15) v+=d15;
-    if(h>=21) v+=d21;
+    let v=v5+(st.deltas[h]||0);
+    if(h>=15&&h<=23) v+=d1015;
+    if(h>=21&&h<=23) v+=d2124;
     return v;
   });
-}
-
-function compliance(vals,cap){
-  return vals.slice(1).filter(v=>v>=1&&v<=cap-1).length;
 }
 
 function draw(st,vals){
   if(chart) chart.destroy();
   chart=new Chart(document.getElementById("chart"),{
     type:"line",
-    data:{labels:HOURS,datasets:[{label:st.station,data:vals,borderColor:"green"}]},
-    options:{responsive:true}
+    data:{
+      labels:HOURS,
+      datasets:[
+        {label:st.station,data:vals,borderColor:"green",borderWidth:2,pointRadius:3},
+        {label:"車位上限",data:HOURS.map(()=>st.capacity),
+         borderColor:"red",borderDash:[6,4],pointRadius:0},
+        {label:"0",data:HOURS.map(()=>0),
+         borderColor:"orange",pointRadius:0}
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false}
   });
 }
 
-function render(st,v5,d15,d21,tag){
-  document.getElementById("area").value=st.area;
-  document.getElementById("cap").value=st.capacity;
-  document.getElementById("v5").value=v5;
-  document.getElementById("d15").value=d15;
-  document.getElementById("d21").value=d21;
-
-  const vals=calc(st,v5,d15,d21);
-  const cap=st.capacity;
-  const ok=compliance(vals,cap);
-
-  document.getElementById("summary").innerText=
-    `${tag} 5=${v5} | 10–15=${d15} | 21–24=${d21} | 合規小時=${ok}`;
-
+function render(st,vals,title){
+  document.getElementById("summary").innerText=title;
   const tb=document.getElementById("tbody");
   tb.innerHTML="";
   vals.forEach((v,i)=>{
     const tr=document.createElement("tr");
-    if(i>0 && (v<1||v>cap-1)) tr.className="bad";
+    if(i>0&&(v<0||v>st.capacity)) tr.className="bad";
     tr.innerHTML=`<td>${HOURS[i]}</td><td>${v}</td>`;
     tb.appendChild(tr);
   });
-
   draw(st,vals);
 }
 
-function updateManual(){
+function manual(){
   const st=findStation(station.value);
   if(!st) return;
-  render(st,+v5.value,+d15.value,+d21.value,"手動");
+  area.value=st.area; cap.value=st.capacity;
+  const vals=calc(st,+v5.value,+d1015.value,+d2124.value);
+  render(st,vals,`手動 5=${v5.value} | 10–15=${d1015.value} | 21–24=${d2124.value}`);
 }
 
 function autoSolve(){
   const st=findStation(station.value);
   if(!st) return;
-  const cap=st.capacity;
+  area.value=st.area; cap.value=st.capacity;
 
-  // 最佳解
-  for(let v=0;v<=cap;v++){
-    const vals=calc(st,v,0,0);
-    if(compliance(vals,cap)===18){
-      return render(st,v,0,0,"最佳解");
+  let best=null;
+  for(let d1=-50;d1<=50;d1++){
+    for(let d2=-50;d2<=50;d2++){
+      const vals=calc(st,0,d1,d2);
+      let ok=0;
+      for(let i=1;i<vals.length;i++){
+        if(vals[i]>=0&&vals[i]<=st.capacity) ok++;
+      }
+      if(!best||ok>best.ok){
+        best={v5:0,d1,d2,ok,vals};
+      }
     }
   }
-
-  // 次佳解
-  let best=null;
-  for(let v=0;v<=cap;v++)
-    for(let x=-56;x<=56;x++)
-      for(let y=-56;y<=56;y++){
-        const vals=calc(st,v,x,y);
-        if(compliance(vals,cap)===18){
-          const cost=Math.abs(x)+Math.abs(y);
-          if(!best||cost<best.cost)
-            best={v,x,y,cost};
-        }
-      }
-  if(best) return render(st,best.v,best.x,best.y,"次佳解");
-
-  // 最後解
-  let best2=null;
-  for(let v=0;v<=cap;v++)
-    for(let x=-300;x<=300;x+=5)
-      for(let y=-300;y<=300;y+=5){
-        const vals=calc(st,v,x,y);
-        const ok=compliance(vals,cap);
-        const cost=Math.abs(x)+Math.abs(y);
-        if(!best2||ok>best2.ok||(ok===best2.ok&&cost<best2.cost))
-          best2={v,x,y,ok,cost};
-      }
-  render(st,best2.v,best2.x,best2.y,"最後解");
+  v5.value=best.v5; d1015.value=best.d1; d2124.value=best.d2;
+  render(st,best.vals,
+    `最後解 5=${best.v5} | 10–15=${best.d1} | 21–24=${best.d2} | 合規小時=${best.ok}`);
 }
 
-function exportExcel(){ alert("Excel 匯出已保留接口（v3.4）"); }
+station.oninput=()=>{
+  const st=findStation(station.value);
+  if(st){area.value=st.area;cap.value=st.capacity;}
+};
 </script>
 </body>
 </html>
