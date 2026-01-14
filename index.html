@@ -1,184 +1,206 @@
 <!doctype html>
 <html lang="zh-Hant">
 <head>
-<meta charset="utf-8" />
-<title>YouBike 每小時在站車輛數（最終穩定版v3）</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>YouBike 每小時在站車輛數（最終穩定版 v3.2）</title>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
-body{font-family:system-ui,"Noto Sans TC";margin:16px}
-h1{font-size:32px;margin-bottom:10px}
-
-.controls{
-  border:1px solid #ccc;border-radius:8px;padding:12px;
-  display:grid;
-  grid-template-columns:
-    80px 220px
-    80px 120px
-    80px 120px
-    110px 120px
-    120px 120px
-    auto;
-  gap:8px;
-  align-items:center;
-}
-label{text-align:right;font-weight:700}
-input{height:32px;font-size:16px;padding:0 8px}
-input:disabled{background:#eee}
-
-.btns{display:flex;gap:8px}
-button{padding:6px 12px;font-weight:700}
-
+body{font-family:system-ui,-apple-system,"Noto Sans TC";margin:16px}
+h1{font-size:32px;font-weight:800}
+input,button{font-size:16px;height:34px}
+.controls{display:grid;grid-template-columns:80px 260px 80px 120px 80px 120px 100px 120px 120px 120px 1fr;gap:8px;align-items:center;border:1px solid #ccc;border-radius:8px;padding:12px}
+label{font-weight:700;text-align:right}
 .main{margin-top:12px;display:grid;grid-template-columns:2fr 1fr;gap:12px}
 .panel{border:1px solid #ccc;border-radius:8px;padding:8px}
-canvas{width:100%!important;height:520px!important}
-
-.summary{
-  background:#f3f6fa;
-  border-left:6px solid #2e7d32;
-  padding:10px;
-  font-size:18px;
-  font-weight:800;
-  margin-bottom:8px;
-}
-
+.summary{background:#f1f5f9;border-left:6px solid #15803d;padding:10px;font-size:18px;font-weight:700;margin-bottom:8px}
 table{width:100%;border-collapse:collapse;font-size:16px}
-th,td{border-top:1px solid #ddd;padding:4px;text-align:center}
-tr.bad{background:#fde2e2}
+th,td{border:1px solid #ccc;padding:4px;text-align:center}
+.bad{background:#fde2e2}
+button{cursor:pointer}
 </style>
 </head>
 
 <body>
-<h1>YouBike 每小時在站車輛數（最終穩定版v3）</h1>
+<h1>YouBike 每小時在站車輛數（最終穩定版 v3.2）</h1>
 
 <div class="controls">
-  <label>場站</label><input id="station">
-  <label>責任區</label><input id="area" disabled>
-  <label>總車位</label><input id="cap" disabled>
-
-  <label>5點車輛</label><input id="v5" type="number" value="0">
-
-  <label>10–15調度</label><input id="d1015" type="number" value="0">
-  <label>21–24調度</label><input id="d2124" type="number" value="0">
-
-  <div class="btns">
-    <button onclick="updateManual()">更新圖表</button>
-    <button onclick="solveAuto()">自動求解</button>
-  </div>
+<label>場站</label><input id="station">
+<label>責任區</label><input id="area" disabled>
+<label>總車位</label><input id="cap" disabled>
+<label>5點</label><input id="v5" type="number" value="0">
+<label>10–15</label><input id="x" type="number" value="0">
+<label>21–24</label><input id="y" type="number" value="0">
+<button onclick="update()">更新圖表</button>
+<button onclick="solveAuto()">自動求解</button>
+<button onclick="exportExcel()">匯出 Excel (v3.2)</button>
 </div>
 
 <div class="main">
-  <div class="panel"><canvas id="chart"></canvas></div>
-  <div class="panel">
-    <div id="summary" class="summary">請輸入場站</div>
-    <table>
-      <thead><tr><th>時間</th><th>在站</th></tr></thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
+<div class="panel"><canvas id="chart" height="420"></canvas></div>
+<div class="panel">
+<div id="summary" class="summary">請輸入場站</div>
+<table>
+<thead><tr><th>時間</th><th>在站</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
 </div>
 
 <script>
-let DB=[],chart=null;
-const HOURS=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
+let DB=[], chart=null;
+const H=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
+
+fetch("default_db.json").then(r=>r.json()).then(j=>DB=j);
+
+function findStation(q){
+ return DB.find(s=>s.station.includes(q));
+}
 
 function calc(st,v5,x,y){
-  return HOURS.map(h=>{
-    let v=v5+(st.deltas[h]||0);
-    if(h>=15&&h<=23) v+=x;
-    if(h>=21&&h<=23) v+=y;
-    return v;
-  });
+ return H.map(h=>{
+   let v=(h===5?v5:0)+(st.deltas[h]||0);
+   if(h>=15)v+=x;
+   if(h>=21)v+=y;
+   return v;
+ });
+}
+
+function compliantHours(st,vals){
+ let c=0;
+ for(let i=1;i<vals.length;i++){
+   if(vals[i]>=1 && vals[i]<=st.capacity-1)c++;
+ }
+ return c;
 }
 
 function feasible(st,vals){
-  for(let i=1;i<vals.length;i++)
-    if(vals[i]<1||vals[i]>st.capacity-1) return false;
-  return true;
+ for(let i=1;i<vals.length;i++){
+   if(vals[i]<1||vals[i]>st.capacity-1)return false;
+ }
+ return true;
+}
+
+/* ===== 解法 ===== */
+function solveBest(st){
+ for(let v5=0;v5<=st.capacity;v5++){
+   const vals=calc(st,v5,0,0);
+   if(feasible(st,vals))return{type:"最佳解",v5,x:0,y:0,vals};
+ }
+ return null;
+}
+
+function solveSecond(st){
+ for(let v5=0;v5<=st.capacity;v5++){
+   for(let x=-56;x<=56;x++){
+     for(let y=-56;y<=56;y++){
+       const vals=calc(st,v5,x,y);
+       if(feasible(st,vals))return{type:"次佳解",v5,x,y,vals};
+     }
+   }
+ }
+ return null;
+}
+
+function solveLast(st){
+ let best=null;
+ for(let v5=0;v5<=st.capacity;v5++){
+   for(let x=-200;x<=200;x++){
+     for(let y=-200;y<=200;y++){
+       const vals=calc(st,v5,x,y);
+       const ok=compliantHours(st,vals);
+       if(!best||ok>best.ok){
+         best={type:"最後解",v5,x,y,vals,ok};
+       }
+     }
+   }
+ }
+ return best;
 }
 
 function solveAuto(){
-  const st=find();
-  if(!st) return;
-
-  // 1. Best
-  for(let v5=0;v5<=st.capacity;v5++){
-    let vals=calc(st,v5,0,0);
-    if(feasible(st,vals)) return render(st,v5,0,0,"最佳解");
-  }
-
-  // 2. Second
-  for(let v5=0;v5<=st.capacity;v5++)
-    for(let x=-56;x<=56;x++)
-      for(let y=-56;y<=56;y++){
-        let vals=calc(st,v5,x,y);
-        if(feasible(st,vals))
-          return render(st,v5,x,y,"次佳解");
-      }
-
-  // 3. Last (maximize valid hours)
-  let best=null;
-  for(let v5=0;v5<=st.capacity;v5++)
-    for(let x=-st.capacity*10;x<=st.capacity*10;x++)
-      for(let y=-st.capacity*10;y<=st.capacity*10;y++){
-        let vals=calc(st,v5,x,y);
-        let ok=0;
-        for(let i=1;i<vals.length;i++)
-          if(vals[i]>=1&&vals[i]<=st.capacity-1) ok++;
-        if(!best||ok>best.ok)
-          best={v5,x,y,vals,ok};
-      }
-  render(st,best.v5,best.x,best.y,"最後解");
+ const st=findStation(station.value);
+ if(!st)return alert("找不到場站");
+ let sol=solveBest(st)||solveSecond(st)||solveLast(st);
+ render(st,sol);
 }
 
-function render(st,v5,x,y,tag){
-  document.getElementById("area").value=st.area;
-  document.getElementById("cap").value=st.capacity;
-  document.getElementById("v5").value=v5;
-  document.getElementById("d1015").value=x;
-  document.getElementById("d2124").value=y;
-
-  const vals=calc(st,v5,x,y);
-  document.getElementById("summary").innerText=
-    `${tag}\n5=${v5}｜10–15=${x}｜21–24=${y}`;
-
-  const tb=document.getElementById("tbody");
-  tb.innerHTML="";
-  vals.forEach((v,i)=>{
-    let tr=document.createElement("tr");
-    if(i>0&&(v<1||v>st.capacity-1)) tr.className="bad";
-    tr.innerHTML=`<td>${HOURS[i]}</td><td>${v}</td>`;
-    tb.appendChild(tr);
-  });
-
-  if(chart) chart.destroy();
-  chart=new Chart(document.getElementById("chart"),{
-    type:"line",
-    data:{labels:HOURS,datasets:[
-      {label:st.station,data:vals,borderColor:"green",tension:.3},
-      {label:"上限",data:HOURS.map(()=>st.capacity-1),
-       borderColor:"red",borderDash:[5,5]},
-      {label:"1",data:HOURS.map(()=>1),borderColor:"orange"}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false}
-  });
+/* ===== UI ===== */
+function update(){
+ const st=findStation(station.value);
+ if(!st)return;
+ const sol={
+   type:"手動",
+   v5:+v5.value,
+   x:+x.value,
+   y:+y.value,
+   vals:calc(st,+v5.value,+x.value,+y.value)
+ };
+ render(st,sol);
 }
 
-function find(){
-  const q=document.getElementById("station").value;
-  return DB.find(r=>r.station.includes(q));
+function render(st,sol){
+ area.value=st.area; cap.value=st.capacity;
+ drawChart(st,sol.vals);
+ tbody.innerHTML="";
+ sol.vals.forEach((v,i)=>{
+   const tr=document.createElement("tr");
+   if(i>0&&(v<1||v>st.capacity-1))tr.className="bad";
+   tr.innerHTML=`<td>${H[i]}</td><td>${v}</td>`;
+   tbody.appendChild(tr);
+ });
+ summary.textContent=
+   `${sol.type}｜5=${sol.v5}｜10–15=${sol.x}｜21–24=${sol.y}
+合規小時數(6–23)：${compliantHours(st,sol.vals)}`;
 }
 
-function updateManual(){
-  const st=find(); if(!st) return;
-  render(st,
-    +v5.value,+d1015.value,+d2124.value,"手動");
+function drawChart(st,vals){
+ if(chart)chart.destroy();
+ chart=new Chart(chartCtx,{
+  type:"line",
+  data:{
+    labels:H,
+    datasets:[
+     {label:st.station,data:vals,borderColor:"green",tension:.3},
+     {label:"上限",data:H.map(()=>st.capacity-1),borderDash:[6,4],borderColor:"red"},
+     {label:"下限",data:H.map(()=>1),borderColor:"orange"}
+    ]
+  },
+  options:{responsive:true}
+ });
 }
 
-fetch("default_db.json")
-  .then(r=>r.json())
-  .then(j=>DB=j);
+/* ===== Excel v3.2 ===== */
+function exportExcel(){
+ const best=[],second=[],last=[];
+ DB.forEach(st=>{
+   const sol=solveBest(st)||solveSecond(st)||solveLast(st);
+   const row={
+     場站:st.station,
+     責任區:st.area,
+     總車位:st.capacity,
+     "5點":sol.v5,
+     "10–15":sol.x,
+     "21–24":sol.y,
+     "6–23合規小時數":compliantHours(st,sol.vals)
+   };
+   if(sol.type==="最佳解")best.push(row);
+   else if(sol.type==="次佳解")second.push(row);
+   else last.push({...row,"為何只能最後解":
+     !solveBest(st)?"5點配置無法避免結構性超載":
+     !solveSecond(st)?"±56調度仍無法全時段合規":
+     "需大幅調度才能壓回區間"
+   });
+ });
+ const wb=XLSX.utils.book_new();
+ if(best.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(best),"最佳解");
+ if(second.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(second),"次佳解");
+ if(last.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(last),"最後解");
+ XLSX.writeFile(wb,"YouBike_v3.2.xlsx");
+}
 </script>
 </body>
 </html>
