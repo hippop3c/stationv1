@@ -1,46 +1,74 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<title>YouBike 每小時在站車輛數（最終穩定版 v3.4）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouBike 每小時在站車輛數（最終穩定版 v3.4）</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
 <style>
-body{font-family:sans-serif;margin:16px}
-h1{margin-bottom:10px}
+:root{
+  --gap:10px;
+  --border:#cfd7e3;
+}
+body{font-family:system-ui,-apple-system,"Segoe UI","Noto Sans TC",Arial;margin:16px}
+h1{font-size:28px;margin-bottom:12px}
 
+/* ===== Top ===== */
 .top{
-  border:1px solid #ccc;
-  padding:10px;
-  border-radius:6px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:12px;
 }
-.row{
-  display:flex;
-  gap:12px;
+.inputs{
+  display:grid;
+  grid-template-columns:
+    70px 220px
+    70px 80px
+    60px 80px
+    50px 70px
+    70px 80px
+    70px 80px;
+  gap: var(--gap);
   align-items:center;
-  margin-bottom:8px;
-  flex-wrap:wrap;
 }
-label{font-weight:700}
-input{height:30px;padding:0 6px}
-button{height:32px}
+.inputs label{font-weight:800;text-align:right}
+.inputs input{height:32px;padding:0 8px}
+.inputs input[disabled]{background:#f3f4f6}
 
+.buttons{
+  margin-top:10px;
+  display:flex;
+  gap:10px;
+  justify-content:flex-start;
+}
+button{height:34px;padding:0 14px;font-weight:800}
+
+/* ===== Main ===== */
 .main{
-  margin-top:12px;
+  margin-top:14px;
   display:grid;
   grid-template-columns:2fr 1fr;
-  gap:12px;
+  gap:14px;
 }
 .panel{
-  border:1px solid #ccc;
-  border-radius:6px;
+  border:1px solid var(--border);
+  border-radius:8px;
   padding:10px;
 }
+canvas{height:420px!important}
+
+/* ===== Table ===== */
+.summary{font-weight:800;margin-bottom:6px}
 table{width:100%;border-collapse:collapse}
 th,td{border:1px solid #ddd;padding:4px;text-align:center}
-.bad{background:#fde2e2}
-canvas{height:420px!important}
+tr.bad{background:#fde2e2}
+
+/* ===== Responsive ===== */
+@media (max-width:1100px){
+  .inputs{grid-template-columns:70px 1fr}
+  .main{grid-template-columns:1fr}
+}
 </style>
 </head>
 
@@ -49,19 +77,19 @@ canvas{height:420px!important}
 
 <div class="top">
   <!-- 第一排：輸入 -->
-  <div class="row">
-    <label>場站</label><input id="station" style="width:220px">
-    <label>責任區</label><input id="area" disabled style="width:60px">
-    <label>車位</label><input id="cap" disabled style="width:60px">
-    <label>5點</label><input id="v5" type="number" value="0" style="width:60px">
-    <label>10–15</label><input id="d1015" type="number" value="0" style="width:60px">
-    <label>21–24</label><input id="d2124" type="number" value="0" style="width:60px">
+  <div class="inputs">
+    <label>場站</label><input id="station">
+    <label>責任區</label><input id="area" disabled>
+    <label>車位</label><input id="cap" disabled>
+    <label>5點</label><input id="v5" type="number" value="0">
+    <label>10–15</label><input id="d1015" type="number" value="0">
+    <label>21–24</label><input id="d2124" type="number" value="0">
   </div>
 
   <!-- 第二排：按鈕 -->
-  <div class="row">
-    <button onclick="manual()">更新圖表</button>
-    <button onclick="autoSolve()">自動求解 (v3.4)</button>
+  <div class="buttons">
+    <button id="btnUpdate">更新圖表</button>
+    <button id="btnSolve">自動求解（v3.4）</button>
   </div>
 </div>
 
@@ -70,7 +98,7 @@ canvas{height:420px!important}
     <canvas id="chart"></canvas>
   </div>
   <div class="panel">
-    <div id="summary" style="font-weight:700;margin-bottom:6px">請輸入場站</div>
+    <div id="summary" class="summary">請輸入場站</div>
     <table>
       <thead><tr><th>時間</th><th>在站</th></tr></thead>
       <tbody id="tbody"></tbody>
@@ -79,90 +107,111 @@ canvas{height:420px!important}
 </div>
 
 <script>
+/* ========= 常數 ========= */
 const HOURS=[5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
 let DB=[], chart=null;
 
-fetch("default_db.json").then(r=>r.json()).then(j=>DB=j);
-
-function findStation(q){
-  return DB.find(s=>s.station.includes(q));
-}
-
-function calc(st,v5,d1015,d2124){
+/* ========= 正確計算（與 UI 解耦） ========= */
+function calcSeries(st,v5,x,y){
   return HOURS.map(h=>{
-    let v=v5+(st.deltas[h]||0);
-    if(h>=15&&h<=23) v+=d1015;
-    if(h>=21&&h<=23) v+=d2124;
+    let v = v5 + (st.deltas[h]||0);
+    if(h>=15) v+=x;     // 10–15 影響 15–23
+    if(h>=21) v+=y;     // 21–24 影響 21–23
     return v;
   });
 }
+function feasible(vals,cap){
+  return vals.slice(1).every(v=>v>=0 && v<=cap);
+}
 
-function draw(st,vals){
+/* ========= 解法順序 ========= */
+function solveBest(st){
+  for(let v5=0;v5<=st.capacity;v5++){
+    const vals=calcSeries(st,v5,0,0);
+    if(feasible(vals,st.capacity)) return {kind:"最佳解",v5,x:0,y:0,vals};
+  }
+  return null;
+}
+function solveSecond(st){
+  for(let x=-56;x<=56;x++){
+    for(let y=-56;y<=56;y++){
+      for(let v5=0;v5<=st.capacity;v5++){
+        const vals=calcSeries(st,v5,x,y);
+        if(feasible(vals,st.capacity)) return {kind:"次佳解",v5,x,y,vals};
+      }
+    }
+  }
+  return null;
+}
+function solveLast(st){
+  let best=null,bestOK=-1;
+  for(let x=-200;x<=200;x++){
+    for(let y=-200;y<=200;y++){
+      for(let v5=0;v5<=st.capacity;v5++){
+        const vals=calcSeries(st,v5,x,y);
+        const ok=vals.slice(1).filter(v=>v>=0&&v<=st.capacity).length;
+        if(ok>bestOK){
+          bestOK=ok;
+          best={kind:"最後解",v5,x,y,vals,ok};
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/* ========= 繪圖 ========= */
+function drawChart(st,vals){
   if(chart) chart.destroy();
   chart=new Chart(document.getElementById("chart"),{
     type:"line",
     data:{
       labels:HOURS,
       datasets:[
-        {label:st.station,data:vals,borderColor:"green",borderWidth:2,pointRadius:3},
-        {label:"車位上限",data:HOURS.map(()=>st.capacity),
-         borderColor:"red",borderDash:[6,4],pointRadius:0},
-        {label:"0",data:HOURS.map(()=>0),
-         borderColor:"orange",pointRadius:0}
+        {label:st.station,data:vals,borderColor:"green",borderWidth:2,tension:.3},
+        {label:"車位上限",data:HOURS.map(()=>st.capacity),borderColor:"red",borderDash:[6,4],pointRadius:0},
+        {label:"0",data:HOURS.map(()=>0),borderColor:"orange",pointRadius:0}
       ]
     },
     options:{responsive:true,maintainAspectRatio:false}
   });
 }
 
-function render(st,vals,title){
-  document.getElementById("summary").innerText=title;
-  const tb=document.getElementById("tbody");
-  tb.innerHTML="";
-  vals.forEach((v,i)=>{
+/* ========= Render ========= */
+function render(st,sol){
+  area.value=st.area; cap.value=st.capacity;
+  v5.value=sol.v5; d1015.value=sol.x; d2124.value=sol.y;
+  summary.textContent=`${sol.kind}｜5=${sol.v5} 10–15=${sol.x} 21–24=${sol.y}`;
+
+  tbody.innerHTML="";
+  sol.vals.forEach((v,i)=>{
     const tr=document.createElement("tr");
     if(i>0&&(v<0||v>st.capacity)) tr.className="bad";
     tr.innerHTML=`<td>${HOURS[i]}</td><td>${v}</td>`;
-    tb.appendChild(tr);
+    tbody.appendChild(tr);
   });
-  draw(st,vals);
+  drawChart(st,sol.vals);
 }
 
-function manual(){
-  const st=findStation(station.value);
-  if(!st) return;
-  area.value=st.area; cap.value=st.capacity;
-  const vals=calc(st,+v5.value,+d1015.value,+d2124.value);
-  render(st,vals,`手動 5=${v5.value} | 10–15=${d1015.value} | 21–24=${d2124.value}`);
+/* ========= UI ========= */
+function findStation(){
+  const q=station.value.trim();
+  return DB.find(s=>s.station.includes(q));
 }
 
-function autoSolve(){
-  const st=findStation(station.value);
-  if(!st) return;
-  area.value=st.area; cap.value=st.capacity;
-
-  let best=null;
-  for(let d1=-50;d1<=50;d1++){
-    for(let d2=-50;d2<=50;d2++){
-      const vals=calc(st,0,d1,d2);
-      let ok=0;
-      for(let i=1;i<vals.length;i++){
-        if(vals[i]>=0&&vals[i]<=st.capacity) ok++;
-      }
-      if(!best||ok>best.ok){
-        best={v5:0,d1,d2,ok,vals};
-      }
-    }
-  }
-  v5.value=best.v5; d1015.value=best.d1; d2124.value=best.d2;
-  render(st,best.vals,
-    `最後解 5=${best.v5} | 10–15=${best.d1} | 21–24=${best.d2} | 合規小時=${best.ok}`);
-}
-
-station.oninput=()=>{
-  const st=findStation(station.value);
-  if(st){area.value=st.area;cap.value=st.capacity;}
+btnUpdate.onclick=()=>{
+  const st=findStation(); if(!st) return;
+  const sol={kind:"手動",v5:+v5.value,x:+d1015.value,y:+d2124.value,
+             vals:calcSeries(st,+v5.value,+d1015.value,+d2124.value)};
+  render(st,sol);
 };
+btnSolve.onclick=()=>{
+  const st=findStation(); if(!st) return;
+  render(st, solveBest(st) || solveSecond(st) || solveLast(st));
+};
+
+/* ========= Load DB ========= */
+fetch("default_db.json").then(r=>r.json()).then(j=>DB=j);
 </script>
 </body>
 </html>
