@@ -7,7 +7,7 @@
 
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<!-- SheetJS (Excel 解析) -->
+<!-- SheetJS -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
 
 <style>
@@ -15,7 +15,7 @@ body{font-family:"Segoe UI","Noto Sans TC",sans-serif;margin:16px}
 h1{margin-bottom:12px}
 .controls{
   display:grid;
-  grid-template-columns:90px 260px 90px 140px 90px 120px 90px 120px;
+  grid-template-columns:90px 220px 90px 200px 90px 120px 90px 120px 90px 120px;
   gap:8px;align-items:center
 }
 .controls label{text-align:right;font-weight:700}
@@ -49,13 +49,13 @@ th,td{border:1px solid #ccc;padding:4px;text-align:center}
   <input id="capInput" disabled>
 
   <label>5點車輛</label>
-  <input id="v5" type="number" value="0">
+  <input id="v5Input" type="number" value="0">
 
   <label>10–15</label>
-  <input id="x" type="number" value="0">
+  <input id="xInput" type="number" value="0">
 
   <label>21–24</label>
-  <input id="y" type="number" value="0">
+  <input id="yInput" type="number" value="0">
 </div>
 
 <div class="buttons">
@@ -66,10 +66,10 @@ th,td{border:1px solid #ccc;padding:4px;text-align:center}
 
 <div class="main">
   <div class="panel">
-    <canvas id="chart"></canvas>
+    <canvas id="chartCanvas"></canvas>
   </div>
   <div class="panel">
-    <div id="summary" class="summary">請選擇場站或上傳 Excel</div>
+    <div id="summary" class="summary">請上傳 Excel 或輸入場站</div>
     <table>
       <thead><tr><th>時間</th><th>在站</th></tr></thead>
       <tbody id="tbody"></tbody>
@@ -78,19 +78,13 @@ th,td{border:1px solid #ccc;padding:4px;text-align:center}
 </div>
 
 <script>
-/* ===== v3.4 核心邏輯 =====
-在站(h)=v5+delta[h]
-x 影響 15–23
-y 影響 21–24
-合規：6–23 ∈ [1, cap-1]
-解順序：最佳(x=0,y=0)→次佳(x,y∈[-56,56])→最後(最大化合規)
-*/
+/* ===== v3.4 核心邏輯 ===== */
 
 let DB=[];
 let chart=null;
 const H=[...Array(18)].map((_,i)=>i+6);
 
-// ---------- Excel 上傳 ----------
+// ===== Excel 上傳（修正版：實際會更新 DB）=====
 document.getElementById("fileInput").addEventListener("change", e=>{
   const file=e.target.files[0];
   if(!file) return;
@@ -98,6 +92,10 @@ document.getElementById("fileInput").addEventListener("change", e=>{
   reader.onload=evt=>{
     const wb=XLSX.read(evt.target.result,{type:"binary"});
     const ws=wb.Sheets["每小時變化"];
+    if(!ws){
+      alert("找不到工作表：每小時變化");
+      return;
+    }
     const rows=XLSX.utils.sheet_to_json(ws,{header:1});
     DB=[];
     for(let i=1;i<rows.length;i++){
@@ -114,12 +112,12 @@ document.getElementById("fileInput").addEventListener("change", e=>{
         deltas:deltas
       });
     }
-    summary.textContent="Excel 已載入，請選擇場站";
+    summary.textContent="Excel 已載入，共 "+DB.length+" 站";
   };
   reader.readAsBinaryString(file);
 });
 
-// ---------- 計算 ----------
+// ===== 計算 =====
 function findStation(q){
   if(!q) return null;
   return DB.find(s=>s.station.includes(q));
@@ -136,20 +134,23 @@ function compliant(vals,cap){
   return vals.every(v=>v>=1&&v<=cap-1);
 }
 
-// ---------- 繪圖 ----------
+// ===== 繪圖 =====
 function draw(st,vals){
   const cap=st.capacity;
   areaInput.value=st.area;
   capInput.value=cap;
-  tbody.innerHTML="";
+
+  const tb=document.getElementById("tbody");
+  tb.innerHTML="";
   vals.forEach((v,i)=>{
     const tr=document.createElement("tr");
     if(v<1||v>cap-1) tr.className="bad";
     tr.innerHTML=`<td>${H[i]}</td><td>${v}</td>`;
-    tbody.appendChild(tr);
+    tb.appendChild(tr);
   });
+
   if(chart) chart.destroy();
-  chart=new Chart(chartCanvas,{
+  chart=new Chart(document.getElementById("chartCanvas"),{
     type:"line",
     data:{
       labels:H,
@@ -163,35 +164,45 @@ function draw(st,vals){
   });
 }
 
-// ---------- 操作 ----------
+// ===== 操作 =====
 function manual(){
-  const st=findStation(stationInput.value); if(!st) return;
+  const st=findStation(stationInput.value);
+  if(!st){ alert("找不到場站"); return; }
   const v5=+v5Input.value||0;
-  const x=+document.getElementById("x").value||0;
-  const y=+document.getElementById("y").value||0;
+  const x=+xInput.value||0;
+  const y=+yInput.value||0;
   draw(st,calc(st,v5,x,y));
   summary.textContent="手動顯示";
 }
+
 function best(){
-  const st=findStation(stationInput.value); if(!st) return;
+  const st=findStation(stationInput.value);
+  if(!st){ alert("找不到場站"); return; }
   const cap=st.capacity;
   let L=Math.max(0,...H.map(h=>1-(st.deltas[h]||0)));
   let U=Math.min(...H.map(h=>(cap-1)-(st.deltas[h]||0)));
   if(L<=U){
     draw(st,calc(st,U,0,0));
     summary.textContent="最佳解";
-  }else summary.textContent="無最佳解";
+  }else{
+    summary.textContent="無最佳解";
+  }
 }
+
 function autoSolve(){
-  const st=findStation(stationInput.value); if(!st) return;
+  const st=findStation(stationInput.value);
+  if(!st){ alert("找不到場站"); return; }
   const cap=st.capacity;
 
+  // 最佳解
   let L=Math.max(0,...H.map(h=>1-(st.deltas[h]||0)));
   let U=Math.min(...H.map(h=>(cap-1)-(st.deltas[h]||0)));
   if(L<=U){
     draw(st,calc(st,U,0,0));
     summary.textContent="最佳解"; return;
   }
+
+  // 次佳解
   for(let x=-56;x<=56;x++){
     for(let y=-56;y<=56;y++){
       const vals=calc(st,0,x,y);
@@ -201,6 +212,8 @@ function autoSolve(){
       }
     }
   }
+
+  // 最後解
   let bestCnt=-1,bx=0,by=0;
   for(let x=-cap;x<=cap;x++){
     for(let y=-cap;y<=cap;y++){
