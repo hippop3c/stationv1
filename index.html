@@ -1,229 +1,182 @@
-<!doctype html>
-<html lang="zh-Hant">
+<!DOCTYPE html>
+<html lang="zh-TW">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
 <title>YouBike 每小時在站車輛數（最終穩定版 v3.4）</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<!-- SheetJS -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-body{font-family:"Segoe UI","Noto Sans TC",sans-serif;margin:16px}
-h1{margin-bottom:12px}
-.controls{
-  display:grid;
-  grid-template-columns:90px 220px 90px 200px 90px 120px 90px 120px 90px 120px;
-  gap:8px;align-items:center
-}
-.controls label{text-align:right;font-weight:700}
-.controls input{height:32px;font-size:16px;padding:0 8px}
-.buttons{grid-column:1/-1;margin-top:6px}
-button{padding:6px 12px;font-size:14px;margin-right:6px}
-.main{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-top:16px}
-.panel{border:1px solid #ccc;border-radius:6px;padding:8px}
-canvas{width:100%!important;height:520px!important}
-.summary{font-size:18px;font-weight:700;margin-bottom:8px}
-table{width:100%;border-collapse:collapse}
-th,td{border:1px solid #ccc;padding:4px;text-align:center}
-.bad{background:#fde2e2}
+body { font-family: Arial; margin:20px }
+input { width:120px; margin-right:10px }
+button { margin-right:10px }
+table { border-collapse: collapse; width:100% }
+th,td { border:1px solid #ccc; padding:4px; text-align:center }
+.bad { background:#ffd6d6 }
 </style>
 </head>
-
 <body>
-<h1>YouBike 每小時在站車輛數（最終穩定版 v3.4）</h1>
 
-<div class="controls">
-  <label>上傳 Excel</label>
-  <input type="file" id="fileInput" accept=".xlsx,.xls">
+<h2>YouBike 每小時在站車輛數（最終穩定版 v3.4）</h2>
 
-  <label>場站</label>
-  <input id="stationInput" placeholder="模糊搜尋">
-
-  <label>責任區</label>
-  <input id="areaInput" disabled>
-
-  <label>總車位</label>
-  <input id="capInput" disabled>
-
-  <label>5點車輛</label>
-  <input id="v5Input" type="number" value="0">
-
-  <label>10–15</label>
-  <input id="xInput" type="number" value="0">
-
-  <label>21–24</label>
-  <input id="yInput" type="number" value="0">
+<div>
+上傳 Excel <input type="file" id="fileInput">
+場站 <input id="stationInput">
+責任區 <input id="areaInput" disabled>
+車位 <input id="capInput" disabled>
+5點 <input id="xInput" value="0">
+10-15 <input id="yInput" value="0">
+21-24 <input id="zInput" value="0">
 </div>
 
-<div class="buttons">
-  <button onclick="manual()">更新圖表</button>
-  <button onclick="best()">最佳解</button>
-  <button onclick="autoSolve()">自動求解</button>
+<div style="margin-top:10px">
+<button onclick="calc()">更新圖表</button>
+<button onclick="autoSolve()">自動求解 (v3.4)</button>
 </div>
 
-<div class="main">
-  <div class="panel">
-    <canvas id="chartCanvas"></canvas>
-  </div>
-  <div class="panel">
-    <div id="summary" class="summary">請上傳 Excel 或輸入場站</div>
-    <table>
-      <thead><tr><th>時間</th><th>在站</th></tr></thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
-</div>
+<canvas id="chart" height="120"></canvas>
+
+<div id="result"></div>
 
 <script>
-/* ===== v3.4 核心邏輯 ===== */
+let db = [];
+let chart;
 
-let DB=[];
-let chart=null;
-const H=[...Array(18)].map((_,i)=>i+6);
-
-// ===== Excel 上傳（修正版：實際會更新 DB）=====
 document.getElementById("fileInput").addEventListener("change", e=>{
-  const file=e.target.files[0];
-  if(!file) return;
-  const reader=new FileReader();
-  reader.onload=evt=>{
-    const wb=XLSX.read(evt.target.result,{type:"binary"});
-    const ws=wb.Sheets["每小時變化"];
-    if(!ws){
-      alert("找不到工作表：每小時變化");
-      return;
-    }
-    const rows=XLSX.utils.sheet_to_json(ws,{header:1});
-    DB=[];
-    for(let i=1;i<rows.length;i++){
-      const r=rows[i];
-      if(!r[2]) continue;
-      let deltas={};
-      for(let h=6;h<=23;h++){
-        deltas[h]=Number(r[h-1])||0;
+  const reader = new FileReader();
+  reader.onload = evt=>{
+    const wb = XLSX.read(evt.target.result,{type:'binary'});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    db = XLSX.utils.sheet_to_json(ws).map(r=>{
+      let o = {};
+      for(let k in r){
+        o[k.trim()] = typeof r[k]==="string" ? r[k].trim() : r[k];
       }
-      DB.push({
-        area:r[0],
-        station:r[2],
-        capacity:Number(r[3]),
-        deltas:deltas
-      });
-    }
-    summary.textContent="Excel 已載入，共 "+DB.length+" 站";
+      return o;
+    });
+    alert("Excel 載入完成，共 "+db.length+" 筆場站");
   };
-  reader.readAsBinaryString(file);
+  reader.readAsBinaryString(e.target.files[0]);
 });
 
-// ===== 計算 =====
-function findStation(q){
-  if(!q) return null;
-  return DB.find(s=>s.station.includes(q));
-}
-function calc(st,v5,x,y){
-  return H.map(h=>{
-    let v=v5+(st.deltas[h]||0);
-    if(h>=15) v+=x;
-    if(h>=21) v+=y;
-    return v;
-  });
-}
-function compliant(vals,cap){
-  return vals.every(v=>v>=1&&v<=cap-1);
+function getStation(){
+  const name = document.getElementById("stationInput").value.trim();
+  const row = db.find(r=>r["場站"]===name);
+  if(!row){ alert("找不到場站"); return null; }
+  return row;
 }
 
-// ===== 繪圖 =====
-function draw(st,vals){
-  const cap=st.capacity;
-  areaInput.value=st.area;
-  capInput.value=cap;
-
-  const tb=document.getElementById("tbody");
-  tb.innerHTML="";
-  vals.forEach((v,i)=>{
-    const tr=document.createElement("tr");
-    if(v<1||v>cap-1) tr.className="bad";
-    tr.innerHTML=`<td>${H[i]}</td><td>${v}</td>`;
-    tb.appendChild(tr);
-  });
-
-  if(chart) chart.destroy();
-  chart=new Chart(document.getElementById("chartCanvas"),{
-    type:"line",
-    data:{
-      labels:H,
-      datasets:[
-        {label:"在站",data:vals,borderColor:"green",tension:.3},
-        {label:"上限",data:H.map(()=>cap),borderColor:"red",borderDash:[5,5]},
-        {label:"0",data:H.map(()=>0),borderColor:"orange"}
-      ]
-    },
-    options:{responsive:true,maintainAspectRatio:false}
-  });
-}
-
-// ===== 操作 =====
-function manual(){
-  const st=findStation(stationInput.value);
-  if(!st){ alert("找不到場站"); return; }
-  const v5=+v5Input.value||0;
-  const x=+xInput.value||0;
-  const y=+yInput.value||0;
-  draw(st,calc(st,v5,x,y));
-  summary.textContent="手動顯示";
-}
-
-function best(){
-  const st=findStation(stationInput.value);
-  if(!st){ alert("找不到場站"); return; }
-  const cap=st.capacity;
-  let L=Math.max(0,...H.map(h=>1-(st.deltas[h]||0)));
-  let U=Math.min(...H.map(h=>(cap-1)-(st.deltas[h]||0)));
-  if(L<=U){
-    draw(st,calc(st,U,0,0));
-    summary.textContent="最佳解";
-  }else{
-    summary.textContent="無最佳解";
+function simulate(row,x,y,z){
+  let v = {};
+  v[5] = Number(x);
+  for(let h=6;h<=23;h++){
+    let base = Number(row[h]);
+    let val = base;
+    if(h>=10 && h<=15) val += y;
+    if(h>=21 && h<=24) val += z;
+    if(h>5) val += v[5];
+    v[h]=Math.round(val);
   }
+  return v;
+}
+
+function compliance(v,cap){
+  let ok=0;
+  for(let h=6;h<=23;h++){
+    if(v[h]>=1 && v[h]<=cap-1) ok++;
+  }
+  return ok;
+}
+
+function calc(){
+  const row = getStation();
+  if(!row) return;
+  const cap = Number(row["車位"]);
+  areaInput.value = row["責任區"];
+  capInput.value = cap;
+
+  const x = Number(xInput.value);
+  const y = Number(yInput.value);
+  const z = Number(zInput.value);
+
+  const v = simulate(row,x,y,z);
+  render(row["場站"],cap,v);
 }
 
 function autoSolve(){
-  const st=findStation(stationInput.value);
-  if(!st){ alert("找不到場站"); return; }
-  const cap=st.capacity;
+  const row = getStation();
+  if(!row) return;
+  const cap = Number(row["車位"]);
 
-  // 最佳解
-  let L=Math.max(0,...H.map(h=>1-(st.deltas[h]||0)));
-  let U=Math.min(...H.map(h=>(cap-1)-(st.deltas[h]||0)));
-  if(L<=U){
-    draw(st,calc(st,U,0,0));
-    summary.textContent="最佳解"; return;
+  // 1. 最佳解
+  let v = simulate(row,0,0,0);
+  if(compliance(v,cap)===18){
+    show(row,0,0,0,"最佳解",v,cap); return;
   }
 
-  // 次佳解
-  for(let x=-56;x<=56;x++){
+  // 2. 次佳解
+  for(let x=0;x<=cap;x++){
     for(let y=-56;y<=56;y++){
-      const vals=calc(st,0,x,y);
-      if(compliant(vals,cap)){
-        draw(st,vals);
-        summary.textContent="次佳解"; return;
+      for(let z=-56;z<=56;z++){
+        let v = simulate(row,x,y,z);
+        if(compliance(v,cap)===18 && v[5]>=0){
+          show(row,x,y,z,"次佳解",v,cap); return;
+        }
       }
     }
   }
 
-  // 最後解
-  let bestCnt=-1,bx=0,by=0;
-  for(let x=-cap;x<=cap;x++){
-    for(let y=-cap;y<=cap;y++){
-      const vals=calc(st,0,x,y);
-      const cnt=vals.filter(v=>v>=1&&v<=cap-1).length;
-      if(cnt>bestCnt){bestCnt=cnt;bx=x;by=y;}
+  // 3. 最後解
+  let best={ok:-1};
+  for(let x=0;x<=cap;x++){
+    for(let y=-200;y<=200;y++){
+      for(let z=-200;z<=200;z++){
+        let v = simulate(row,x,y,z);
+        if(v[5]<0) continue;
+        let ok = compliance(v,cap);
+        if(ok>best.ok){
+          best={x,y,z,ok,v};
+        }
+      }
     }
   }
-  draw(st,calc(st,0,bx,by));
-  summary.textContent="最後解";
+  show(row,best.x,best.y,best.z,"最後解",best.v,cap);
+}
+
+function show(row,x,y,z,type,v,cap){
+  xInput.value=x; yInput.value=y; zInput.value=z;
+  render(row["場站"],cap,v,type);
+}
+
+function render(name,cap,v,type="手動"){
+  const labels=[], data=[], upper=[], zero=[];
+  for(let h=5;h<=23;h++){
+    labels.push(h);
+    data.push(v[h]);
+    upper.push(cap);
+    zero.push(0);
+  }
+
+  if(chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"),{
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {label:name,data, borderColor:'green',fill:false},
+        {label:'車位上限',data:upper,borderColor:'red',borderDash:[5,5]},
+        {label:'0',data:zero,borderColor:'orange'}
+      ]
+    }
+  });
+
+  let html = `<h3>${type}：5=${xInput.value} | 10-15=${yInput.value} | 21-24=${zInput.value} | 合規=${compliance(v,cap)}</h3>`;
+  html += `<table><tr><th>時間</th><th>在站</th></tr>`;
+  for(let h=5;h<=23;h++){
+    let cls = (h>=6 && (v[h]<1 || v[h]>cap-1)) ? "class='bad'" : "";
+    html+=`<tr ${cls}><td>${h}</td><td>${v[h]}</td></tr>`;
+  }
+  html+=`</table>`;
+  result.innerHTML = html;
 }
 </script>
 </body>
