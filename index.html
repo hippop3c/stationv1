@@ -5,17 +5,43 @@
 <title>YouBike 每小時在站車輛數（最終穩定版 v3.4）</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-body{font-family:sans-serif}
-.controls input{width:60px}
-.ok{background:#d4edda}
-.bad{background:#f8d7da}
+body { font-family: Arial, sans-serif; }
+
+.top-bar input { width: 60px; margin-right: 8px; }
+.top-bar { margin-bottom: 10px; }
+
+.container {
+  display: flex;
+  gap: 20px;
+}
+
+.left-panel {
+  width: 220px;
+}
+
+.right-panel {
+  flex: 1;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+}
+th, td {
+  border: 1px solid #ccc;
+  text-align: center;
+  padding: 4px;
+}
+.ok { background: #d4edda; }
+.bad { background: #f8d7da; }
 </style>
 </head>
 <body>
 
 <h2>YouBike 每小時在站車輛數（最終穩定版 v3.4）</h2>
 
-<div class="controls">
+<div class="top-bar">
 場站 <input id="stationInput">
 責任區 <input id="areaInput">
 車位 <input id="capInput">
@@ -31,42 +57,33 @@ body{font-family:sans-serif}
 
 <div id="summary"></div>
 
-<table border="1">
-<thead>
-<tr><th>時間</th><th>在站</th></tr>
-</thead>
-<tbody id="tableBody"></tbody>
-</table>
+<div class="container">
+  <div class="left-panel">
+    <table>
+      <thead>
+        <tr><th>時間</th><th>在站</th></tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
 
-<canvas id="chart" height="300"></canvas>
+  <div class="right-panel">
+    <canvas id="chart" height="400"></canvas>
+  </div>
+</div>
 
 <script>
 const HOURS = Array.from({length:19},(_,i)=>i+5);
-
-const v5Input = $("v5");
-const x79Input = $("x79");
-const xInput = $("x1015");
-const yInput = $("y2124");
-
-const stationInput = $("stationInput");
-const areaInput = $("areaInput");
-const capInput = $("capInput");
-const summaryEl = $("summary");
-const tableBody = $("tableBody");
-
 let db = [];
 let chart;
 
-fetch("default_db.json").then(r=>r.json()).then(j=>{
-  db = j;
-});
+fetch("default_db.json").then(r=>r.json()).then(j=>db=j);
 
 function $(id){ return document.getElementById(id); }
-
-function toInt(v,d=0){ return isNaN(parseInt(v))?d:parseInt(v); }
+function toInt(v){ return isNaN(parseInt(v)) ? 0 : parseInt(v); }
 
 function getSelectedStation(){
-  const name = stationInput.value.trim();
+  const name = $("stationInput").value.trim();
   if(!name) return null;
   return db.find(x=>x.station.includes(name));
 }
@@ -75,48 +92,49 @@ function getDelta(st,h){
   return st.deltas[h.toString()] || 0;
 }
 
-/* ========= 核心唯一新增邏輯 ========= */
+/* 唯一新增邏輯 */
 function calcSeries(st, v5, x79, x, y){
   return HOURS.map(h=>{
     let v = v5 + getDelta(st,h);
-    if(h >= 7) v += x79;
+    if(h >= 7)  v += x79;
     if(h >= 15) v += x;
     if(h >= 21) v += y;
     return v;
   });
 }
-/* =================================== */
 
 function render(st, v5, x79, x, y, kind){
   const vals = calcSeries(st, v5, x79, x, y);
   const cap = st.capacity;
   let ok = 0;
 
-  tableBody.innerHTML="";
+  const tb = $("tableBody");
+  tb.innerHTML="";
+
   vals.forEach((v,i)=>{
     const h = HOURS[i];
     const tr = document.createElement("tr");
     if(v>=0 && v<=cap){ tr.className="ok"; ok++; }
     else tr.className="bad";
     tr.innerHTML = `<td>${h}</td><td>${v}</td>`;
-    tableBody.appendChild(tr);
+    tb.appendChild(tr);
   });
 
-  summaryEl.textContent =
-    `${kind} 5=${v5} | 7–9=${x79} | 10–15=${x} | 21–24=${y} | 合規小時=${ok}`;
+  $("summary").textContent =
+    `${kind} 5=${v5} | 7-9=${x79} | 10-15=${x} | 21-24=${y} | 合規小時=${ok}`;
 
-  drawChart(vals,cap,st.station);
+  drawChart(vals, cap, st.station);
 }
 
-function drawChart(vals,cap,title){
+function drawChart(vals, cap, title){
   if(chart) chart.destroy();
   chart = new Chart($("chart"),{
     type:"line",
     data:{
       labels:HOURS,
       datasets:[
-        {label:title,data:vals,borderColor:"green"},
-        {label:"車位上限",data:HOURS.map(_=>cap),borderColor:"red",borderDash:[5,5]}
+        {label:title, data:vals, borderColor:"green", tension:0.2},
+        {label:"車位上限", data:HOURS.map(_=>cap), borderColor:"red", borderDash:[5,5]}
       ]
     }
   });
@@ -126,22 +144,23 @@ function updateManual(){
   const st = getSelectedStation();
   if(!st) return;
 
-  const v5 = toInt(v5Input.value,0);
-  const x79 = toInt(x79Input.value,0);
-  const x = toInt(xInput.value,0);
-  const y = toInt(yInput.value,0);
-
-  render(st,v5,x79,x,y,"手動");
+  render(
+    st,
+    toInt($("v5").value),
+    toInt($("x79").value),
+    toInt($("x1015").value),
+    toInt($("y2124").value),
+    "手動"
+  );
 }
 
-/* ===== 以下全部維持 v3.4 原邏輯 ===== */
-
+/* 原本 v3.4 自動解（完全沒動） */
 function solveAuto(st){
-  let best = {ok:-1,v5:0,x:0,y:0};
+  let best = {ok:-1,v5:0};
   for(let v5=0;v5<=st.capacity;v5++){
     const vals = calcSeries(st,v5,0,0,0);
     const ok = vals.filter(v=>v>=0 && v<=st.capacity).length;
-    if(ok>best.ok) best={ok,v5,x:0,y:0};
+    if(ok>best.ok) best={ok,v5};
   }
   return {kind:"最佳解",v5:best.v5,x79:0,x:0,y:0};
 }
@@ -150,7 +169,7 @@ function clickAuto(){
   const st = getSelectedStation();
   if(!st) return;
   const sol = solveAuto(st);
-  render(st, sol.v5, 0, sol.x, sol.y, sol.kind);
+  render(st, sol.v5, 0, 0, 0, sol.kind);
 }
 </script>
 </body>
