@@ -2,45 +2,42 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>YouBike 每小時在站車輛數（最終穩定版 v3.4）</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
 <style>
 body{font-family:"Segoe UI","Noto Sans TC";margin:18px}
-h1{font-size:30px;margin-bottom:10px}
+h1{font-size:28px;margin-bottom:8px}
 
 .controls{
   border:1px solid #ccc;
-  padding:10px;
-  border-radius:8px;
+  padding:8px;
+  border-radius:6px;
   display:grid;
   grid-template-columns:
-    50px 220px
+    50px 200px
     60px 60px
     50px 60px
     50px 60px
     60px 60px
-    60px 60px
-    70px 60px;
+    60px 60px;
   gap:6px;
   align-items:center;
 }
 
-input{height:28px}
-button{height:30px}
+input{height:26px}
+button{height:28px}
 
-.btnRow{grid-column:1/-1;margin-top:6px}
+.btnRow{grid-column:1/-1;margin-top:4px}
 
 .main{
-  margin-top:12px;
+  margin-top:10px;
   display:grid;
   grid-template-columns:2fr 1fr;
-  gap:12px;
+  gap:10px;
 }
 
-.panel{border:1px solid #ccc;border-radius:8px;padding:8px}
-
+.panel{border:1px solid #ccc;border-radius:6px;padding:6px}
 tr.bad{background:#ffdede}
 </style>
 </head>
@@ -94,7 +91,7 @@ function getDelta(st,h){
   return st.deltas[String(h)]||0;
 }
 
-/* 核心公式（唯一正確） */
+/* 唯一正確核心公式 */
 function calcSeries(st,v5,x79,x,y){
   return HOURS.map(h=>{
     let v=v5+getDelta(st,h);
@@ -105,7 +102,6 @@ function calcSeries(st,v5,x79,x,y){
   });
 }
 
-/* 合規小時 */
 function okCount(st,vals){
   let ok=0;
   for(let i=1;i<vals.length;i++){
@@ -114,7 +110,7 @@ function okCount(st,vals){
   return ok;
 }
 
-/* 真正自動求解（暴力四維搜尋） */
+/* 真正自動求解 */
 function solveAuto(st){
   const cap=st.capacity;
   let best=null;
@@ -140,9 +136,15 @@ function solveAuto(st){
   return best;
 }
 
+/* render 同時更新 input */
 function render(st,v5,x79,x,y,kind){
   $("areaInput").value=st.area;
   $("capInput").value=st.capacity;
+
+  $("v5").value=v5;
+  $("x79").value=x79;
+  $("x1015").value=x;
+  $("y2124").value=y;
 
   const vals=calcSeries(st,v5,x79,x,y);
   const tb=$("tbody");
