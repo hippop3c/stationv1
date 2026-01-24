@@ -1,105 +1,123 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>YouBike 每小時在站車輛數（最終穩定版 v3.4）</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<style>
+body{font-family:"Segoe UI","Noto Sans TC";margin:18px}
+h1{font-size:32px}
+.controls{
+  border:1px solid #ccc;padding:12px;border-radius:8px;
+  display:grid;
+  grid-template-columns:
+    60px 220px
+    60px 80px
+    60px 80px
+    60px 80px
+    60px 80px
+    80px 80px;
+  gap:8px;
+}
+input{height:32px}
+.btnRow{grid-column:1/-1}
+.main{margin-top:12px;display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.panel{border:1px solid #ccc;border-radius:8px;padding:8px}
+tr.bad{background:#ffdede}
+</style>
+</head>
+
+<body>
+<h1>YouBike 每小時在站車輛數（最終穩定版 v3.4）</h1>
+
+<div class="controls">
+<label>場站</label>
+<input id="stationInput" list="stationList">
+<datalist id="stationList"></datalist>
+
+<label>責任區</label><input id="areaInput" disabled>
+<label>車位</label><input id="capInput" disabled>
+
+<label>5點</label><input id="v5" type="number" value="0">
+<label>7–9</label><input id="x79" type="number" value="0">
+<label>10–15</label><input id="x1015" type="number" value="0">
+<label>21–24</label><input id="y2124" type="number" value="0">
+
+<div class="btnRow">
+<button onclick="updateManual()">更新圖表</button>
+<button onclick="clickAuto()">自動求解（v3.4）</button>
+</div>
+
+<div id="dbInfo"></div>
+</div>
+
+<div class="main">
+<div class="panel">
+<canvas id="chart"></canvas>
+</div>
+
+<div class="panel">
+<div id="summary"></div>
+<table border="1" width="100%">
+<thead><tr><th>時間</th><th>在站</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+</div>
+
 <script>
-let DB = [];
-let chart = null;
+let DB=[];
+let chart=null;
+const HOURS=[...Array(19)].map((_,i)=>i+5);
 
-const HOURS = Array.from({length:19},(_,i)=>i+5);
-const HOURS_6_23 = Array.from({length:18},(_,i)=>i+6);
-
-function $(id){ return document.getElementById(id); }
-function toInt(v){ return Number.isFinite(+v)?+v:0; }
+function $(id){return document.getElementById(id)}
+function toInt(v){return Number.isFinite(+v)?+v:0}
 
 function getDelta(st,h){
   if(h===5) return 0;
   return st.deltas[String(h)]||0;
 }
 
-/* 核心：加入 x79 */
+/* 核心唯一新增 */
 function calcSeries(st,v5,x79,x,y){
   return HOURS.map(h=>{
-    let v = v5 + getDelta(st,h);
-    if(h>=7)  v += x79;   // 新增
-    if(h>=15) v += x;
-    if(h>=21) v += y;
+    let v=v5+getDelta(st,h);
+    if(h>=7)  v+=x79;
+    if(h>=15) v+=x;
+    if(h>=21) v+=y;
     return v;
   });
 }
 
-/* 合規小時 */
-function okHoursCount(st, vals){
-  const cap = st.capacity;
-  let c=0;
+/* 合規：1 ~ cap-1 */
+function okCount(st,vals){
+  let ok=0;
   for(let i=1;i<vals.length;i++){
-    if(vals[i]>=1 && vals[i]<=cap-1) c++;
+    if(vals[i]>=1 && vals[i]<=st.capacity-1) ok++;
   }
-  return c;
+  return ok;
 }
 
-/* ========== 自動求解（v3.4 原版 + x79） ========== */
-
-function solveBest(st){
-  const cap = st.capacity;
-  let L=-Infinity, U=Infinity;
-
-  for(const h of HOURS_6_23){
-    let off = getDelta(st,h);
-    // x79,x,y 全為 0
-    L = Math.max(L, 1-off);
-    U = Math.min(U, cap-1-off);
-  }
-
-  const lo = Math.max(0, Math.ceil(L));
-  const hi = Math.min(cap, Math.floor(U));
-  if(lo<=hi) return {kind:"最佳解",v5:lo,x79:0,x:0,y:0};
-  return null;
-}
-
-function solveSecond(st){
-  const cap = st.capacity;
-  const LIM=56;
-  let best=null;
-
-  for(let x79=-LIM;x79<=LIM;x79++){
-    for(let x=-LIM;x<=LIM;x++){
-      for(let y=-LIM;y<=LIM;y++){
-        let L=-Infinity,U=Infinity;
-        for(const h of HOURS_6_23){
-          let off = getDelta(st,h);
-          if(h>=7) off+=x79;
-          if(h>=15) off+=x;
-          if(h>=21) off+=y;
-          L=Math.max(L,1-off);
-          U=Math.min(U,cap-1-off);
-        }
-        const lo=Math.max(0,Math.ceil(L));
-        const hi=Math.min(cap,Math.floor(U));
-        if(lo>hi) continue;
-
-        const score=Math.abs(x79)+Math.abs(x)+Math.abs(y);
-        if(!best || score<best.score){
-          best={kind:"次佳解",v5:lo,x79,x,y,score};
-        }
-      }
-    }
-  }
-  return best;
-}
-
-function solveLast(st){
-  const cap = st.capacity;
+/* 自動求解完整吃進 x79 */
+function solveAuto(st){
+  const cap=st.capacity;
   let best=null;
 
   for(let v5=0;v5<=cap;v5++){
-    for(let x79=-200;x79<=200;x79++){
-      for(let x=-200;x<=200;x++){
-        for(let y=-200;y<=200;y++){
+    for(let x79=-60;x79<=60;x79++){
+      for(let x=-60;x<=60;x++){
+        for(let y=-60;y<=60;y++){
           const vals=calcSeries(st,v5,x79,x,y);
-          const ok=okHoursCount(st,vals);
-          const disp=Math.abs(x79)+Math.abs(x)+Math.abs(y);
+          const ok=okCount(st,vals);
+          const cost=Math.abs(x79)+Math.abs(x)+Math.abs(y);
+
           if(!best ||
-             ok>best.ok ||
-             (ok===best.ok && disp<best.disp)
+            ok>best.ok ||
+            (ok===best.ok && cost<best.cost)
           ){
-            best={kind:"最後解",v5,x79,x,y,ok,disp};
+            best={v5,x79,x,y,ok,cost};
           }
         }
       }
@@ -108,61 +126,45 @@ function solveLast(st){
   return best;
 }
 
-function solveAuto(st){
-  return solveBest(st) || solveSecond(st) || solveLast(st);
-}
-
-/* ========== Render ========== */
-
 function render(st,v5,x79,x,y,kind){
-  $("areaInput").value = st.area;
-  $("capInput").value = st.capacity;
+  $("areaInput").value=st.area;
+  $("capInput").value=st.capacity;
 
-  const vals = calcSeries(st,v5,x79,x,y);
-  const cap = st.capacity;
-  const tb = $("tbody");
+  const vals=calcSeries(st,v5,x79,x,y);
+  const tb=$("tbody");
   tb.innerHTML="";
-
   let ok=0;
+
   vals.forEach((v,i)=>{
-    const h = HOURS[i];
     const tr=document.createElement("tr");
-    if(i>=1 && (v<1 || v>cap-1)) tr.className="bad";
+    if(i>=1 && (v<1 || v>st.capacity-1)) tr.className="bad";
     else if(i>=1) ok++;
-    tr.innerHTML=`<td>${h}</td><td>${v}</td>`;
+    tr.innerHTML=`<td>${HOURS[i]}</td><td>${v}</td>`;
     tb.appendChild(tr);
   });
 
-  $("summary").textContent =
-    `${kind} 5=${v5} | 7–9=${x79} | 10–15=${x} | 21–24=${y} | 合規小時=${ok}`;
+  $("summary").textContent=
+    `${kind} 5=${v5} | 7-9=${x79} | 10-15=${x} | 21-24=${y} | 合規=${ok}`;
 
-  drawChart(st,vals);
-}
-
-function drawChart(st,vals){
-  const cap = st.capacity;
   if(chart) chart.destroy();
-  chart = new Chart($("chart"),{
+  chart=new Chart($("chart"),{
     type:"line",
     data:{
       labels:HOURS,
       datasets:[
-        {label:st.station,data:vals,borderColor:"green",tension:.3},
-        {label:"車位上限",data:HOURS.map(_=>cap),borderColor:"red",borderDash:[6,4]},
+        {label:st.station,data:vals,borderColor:"green"},
+        {label:"車位上限",data:HOURS.map(_=>st.capacity),borderColor:"red",borderDash:[6,4]},
         {label:"0",data:HOURS.map(_=>0),borderColor:"orange"}
       ]
-    },
-    options:{responsive:true,maintainAspectRatio:false}
+    }
   });
 }
 
-/* ========== UI ========== */
-
 function updateManual(){
-  const st=DB.find(x=>x.station.includes($("stationInput").value));
+  const name=$("stationInput").value;
+  const st=DB.find(r=>r.station.includes(name));
   if(!st) return;
-  render(
-    st,
+  render(st,
     toInt($("v5").value),
     toInt($("x79").value),
     toInt($("x1015").value),
@@ -172,24 +174,24 @@ function updateManual(){
 }
 
 function clickAuto(){
-  const st=DB.find(x=>x.station.includes($("stationInput").value));
+  const name=$("stationInput").value;
+  const st=DB.find(r=>r.station.includes(name));
   if(!st) return;
   const sol=solveAuto(st);
-  render(st,sol.v5,sol.x79,sol.x,sol.y,sol.kind);
+  render(st,sol.v5,sol.x79,sol.x,sol.y,"自動");
 }
-
-/* ========== Load DB ========== */
 
 fetch("default_db.json")
 .then(r=>r.json())
 .then(j=>{
   DB=j;
-  $("dbInfo").textContent=`資料來源：default_db.json（${DB.length}站）`;
-  const dl=$("stationList");
+  $("dbInfo").textContent=`資料來源 default_db.json (${DB.length}站)`;
   DB.forEach(r=>{
     const o=document.createElement("option");
     o.value=r.station;
-    dl.appendChild(o);
+    $("stationList").appendChild(o);
   });
 });
 </script>
+</body>
+</html>
