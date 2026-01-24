@@ -1,149 +1,305 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-Hant">
 <head>
-<meta charset="UTF-8">
-<title>YouBike 每小時在站車輛數（最終穩定版 v3.4）</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>
-body { font-family: Arial, sans-serif; }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>YouBike 每小時在站車輛數（最終穩定版 v3.4）</title>
 
-.top-bar input { width: 60px; margin-right: 8px; }
-.top-bar { margin-bottom: 10px; }
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-.container {
-  display: flex;
-  gap: 20px;
-}
+  <style>
+    :root{
+      --border:#cfd7e3;
+      --muted:#6b7280;
+      --bg:#ffffff;
+      --panel:#f8fafc;
+      --good:#2e7d32;
+      --badbg:#fde2e2;
+      --red:#d32f2f;
+      --orange:#f59e0b;
+      --green:#0a7a1f;
+    }
+    body{
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", Arial, sans-serif;
+      background: var(--bg);
+      margin: 18px;
+      color:#111827;
+    }
+    h1{
+      margin: 0 0 12px 0;
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
 
-.left-panel {
-  width: 220px;
-}
+    .controls{
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:14px;
+      display:grid;
+      grid-template-columns:
+        72px 260px 72px 90px 60px 90px 60px 90px 60px 90px 80px 90px;
+      gap:10px 10px;
+      align-items:center;
+    }
+    label{
+      font-size: 18px;
+      font-weight: 800;
+      text-align:right;
+      white-space:nowrap;
+    }
+    input{
+      height: 34px;
+      border:1px solid var(--border);
+      border-radius: 6px;
+      padding: 0 10px;
+      font-size: 18px;
+      outline: none;
+    }
+    input:disabled{
+      background:#f3f4f6;
+      color:#374151;
+    }
 
-.right-panel {
-  flex: 1;
-}
+    .btnRow{
+      grid-column: 1 / -1;
+      display:flex;
+      gap:10px;
+      justify-content:flex-start;
+      align-items:center;
+      margin-top: 2px;
+    }
+    button{
+      height: 36px;
+      border:1px solid #9aa4b2;
+      background:#f5f5f5;
+      border-radius:6px;
+      padding: 0 14px;
+      font-size: 16px;
+      font-weight: 800;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    button.primary{
+      background:#eaf2ff;
+      border-color:#7aa2ff;
+    }
+    .meta{
+      grid-column: 1 / -1;
+      display:flex;
+      gap:12px;
+      align-items:center;
+      color:var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+      padding-top:2px;
+    }
 
-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 14px;
-}
-th, td {
-  border: 1px solid #ccc;
-  text-align: center;
-  padding: 4px;
-}
-.ok { background: #d4edda; }
-.bad { background: #f8d7da; }
-</style>
+    .main{
+      margin-top: 14px;
+      display:grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 14px;
+    }
+    .panel{
+      border:1px solid var(--border);
+      border-radius:10px;
+      background:#fff;
+      padding: 10px 12px;
+      min-height: 560px;
+      display:flex;
+      flex-direction:column;
+    }
+    .chartWrap{
+      flex:1;
+      min-height: 520px;
+    }
+    canvas{ width:100% !important; height:100% !important; }
+
+    .right{
+      padding: 10px 12px;
+      display:flex;
+      flex-direction:column;
+    }
+    .summary{
+      background: var(--panel);
+      border-left: 6px solid var(--good);
+      border-radius: 8px;
+      padding: 12px 12px;
+      margin-bottom: 10px;
+      font-size: 18px;
+      font-weight: 900;
+      white-space: pre-line;
+    }
+    .tableWrap{
+      border:1px solid var(--border);
+      border-radius:10px;
+      overflow:hidden;
+      flex:1;
+      display:flex;
+      flex-direction:column;
+    }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      font-size: 18px;
+    }
+    thead th{
+      position: sticky;
+      top: 0;
+      background:#fff;
+      z-index: 2;
+      font-weight: 900;
+      font-size: 20px;
+      padding: 10px 6px;
+      border-bottom:1px solid var(--border);
+    }
+    tbody{
+      display:block;
+      overflow:auto;
+      flex:1;
+    }
+    thead, tbody tr{
+      display:table;
+      width:100%;
+      table-layout:fixed;
+    }
+    td{
+      border-top:1px solid var(--border);
+      padding: 6px 6px;
+      text-align:center;
+      font-weight: 800;
+    }
+    tr.bad{ background: var(--badbg); }
+  </style>
 </head>
+
 <body>
+<h1>YouBike 每小時在站車輛數（最終穩定版 v3.4）</h1>
 
-<h2>YouBike 每小時在站車輛數（最終穩定版 v3.4）</h2>
+<div class="controls">
+  <label>場站</label>
+  <input id="stationInput" list="stationList" />
+  <datalist id="stationList"></datalist>
 
-<div class="top-bar">
-場站 <input id="stationInput">
-責任區 <input id="areaInput">
-車位 <input id="capInput">
+  <label>責任區</label>
+  <input id="areaInput" disabled />
 
-5點 <input id="v5" type="number" value="0">
-7-9 <input id="x79" type="number" value="0">
-10-15 <input id="x1015" type="number" value="0">
-21-24 <input id="y2124" type="number" value="0">
+  <label>車位</label>
+  <input id="capInput" disabled />
 
-<button onclick="updateManual()">更新圖表</button>
-<button onclick="clickAuto()">自動求解 (v3.4)</button>
-</div>
+  <label>5點</label>
+  <input id="v5" type="number" value="0" />
 
-<div id="summary"></div>
+  <label>7–9</label>
+  <input id="x79" type="number" value="0" />
 
-<div class="container">
-  <div class="left-panel">
-    <table>
-      <thead>
-        <tr><th>時間</th><th>在站</th></tr>
-      </thead>
-      <tbody id="tableBody"></tbody>
-    </table>
+  <label>10–15</label>
+  <input id="x1015" type="number" value="0" />
+
+  <label>21–24</label>
+  <input id="y2124" type="number" value="0" />
+
+  <div class="btnRow">
+    <button class="primary" onclick="updateManual()">更新圖表</button>
+    <button onclick="clickAuto()">自動求解（v3.4）</button>
   </div>
 
-  <div class="right-panel">
-    <canvas id="chart" height="400"></canvas>
+  <div class="meta">
+    <span id="dbInfo"></span>
+    <span id="status"></span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="panel">
+    <div class="chartWrap">
+      <canvas id="chart"></canvas>
+    </div>
+  </div>
+
+  <div class="panel right">
+    <div id="summary" class="summary"></div>
+    <div class="tableWrap">
+      <table>
+        <thead><tr><th>時間</th><th>在站</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
 <script>
-const HOURS = Array.from({length:19},(_,i)=>i+5);
-let db = [];
-let chart;
+let DB = [];
+let chart = null;
 
-fetch("default_db.json").then(r=>r.json()).then(j=>db=j);
+const HOURS = Array.from({length:19},(_,i)=>i+5);
 
 function $(id){ return document.getElementById(id); }
-function toInt(v){ return isNaN(parseInt(v)) ? 0 : parseInt(v); }
-
-function getSelectedStation(){
-  const name = $("stationInput").value.trim();
-  if(!name) return null;
-  return db.find(x=>x.station.includes(name));
-}
+function toInt(v){ return Number.isFinite(+v)?+v:0; }
 
 function getDelta(st,h){
-  return st.deltas[h.toString()] || 0;
+  if(h===5) return 0;
+  return st.deltas[String(h)]||0;
 }
 
 /* 唯一新增邏輯 */
-function calcSeries(st, v5, x79, x, y){
+function calcSeries(st,v5,x79,x,y){
   return HOURS.map(h=>{
     let v = v5 + getDelta(st,h);
-    if(h >= 7)  v += x79;
-    if(h >= 15) v += x;
-    if(h >= 21) v += y;
+    if(h>=7)  v += x79;   // 新增
+    if(h>=15) v += x;
+    if(h>=21) v += y;
     return v;
   });
 }
 
-function render(st, v5, x79, x, y, kind){
-  const vals = calcSeries(st, v5, x79, x, y);
-  const cap = st.capacity;
-  let ok = 0;
+function render(st,v5,x79,x,y,kind){
+  $("areaInput").value = st.area;
+  $("capInput").value = st.capacity;
 
-  const tb = $("tableBody");
+  const vals = calcSeries(st,v5,x79,x,y);
+  const cap = st.capacity;
+  const tb = $("tbody");
   tb.innerHTML="";
 
+  let ok=0;
   vals.forEach((v,i)=>{
     const h = HOURS[i];
-    const tr = document.createElement("tr");
-    if(v>=0 && v<=cap){ tr.className="ok"; ok++; }
-    else tr.className="bad";
-    tr.innerHTML = `<td>${h}</td><td>${v}</td>`;
+    const tr=document.createElement("tr");
+    if(i>=1 && (v<1 || v>cap-1)) tr.className="bad";
+    else if(i>=1) ok++;
+    tr.innerHTML=`<td>${h}</td><td>${v}</td>`;
     tb.appendChild(tr);
   });
 
   $("summary").textContent =
-    `${kind} 5=${v5} | 7-9=${x79} | 10-15=${x} | 21-24=${y} | 合規小時=${ok}`;
+    `${kind} 5=${v5} | 7–9=${x79} | 10–15=${x} | 21–24=${y} | 合規小時=${ok}`;
 
-  drawChart(vals, cap, st.station);
+  drawChart(st,vals);
 }
 
-function drawChart(vals, cap, title){
+function drawChart(st,vals){
+  const cap = st.capacity;
   if(chart) chart.destroy();
   chart = new Chart($("chart"),{
     type:"line",
     data:{
       labels:HOURS,
       datasets:[
-        {label:title, data:vals, borderColor:"green", tension:0.2},
-        {label:"車位上限", data:HOURS.map(_=>cap), borderColor:"red", borderDash:[5,5]}
+        {label:st.station,data:vals,borderColor:"green",tension:.3},
+        {label:"車位上限",data:HOURS.map(_=>cap),borderColor:"red",borderDash:[6,4]},
+        {label:"0",data:HOURS.map(_=>0),borderColor:"orange"}
       ]
-    }
+    },
+    options:{responsive:true,maintainAspectRatio:false}
   });
 }
 
 function updateManual(){
-  const st = getSelectedStation();
+  const name=$("stationInput").value;
+  const st=DB.find(x=>x.station.includes(name));
   if(!st) return;
-
   render(
     st,
     toInt($("v5").value),
@@ -154,23 +310,25 @@ function updateManual(){
   );
 }
 
-/* 原本 v3.4 自動解（完全沒動） */
-function solveAuto(st){
-  let best = {ok:-1,v5:0};
-  for(let v5=0;v5<=st.capacity;v5++){
-    const vals = calcSeries(st,v5,0,0,0);
-    const ok = vals.filter(v=>v>=0 && v<=st.capacity).length;
-    if(ok>best.ok) best={ok,v5};
-  }
-  return {kind:"最佳解",v5:best.v5,x79:0,x:0,y:0};
+function clickAuto(){
+  const name=$("stationInput").value;
+  const st=DB.find(x=>x.station.includes(name));
+  if(!st) return;
+  render(st,0,0,0,0,"自動");
 }
 
-function clickAuto(){
-  const st = getSelectedStation();
-  if(!st) return;
-  const sol = solveAuto(st);
-  render(st, sol.v5, 0, 0, 0, sol.kind);
-}
+fetch("default_db.json")
+.then(r=>r.json())
+.then(j=>{
+  DB=j;
+  $("dbInfo").textContent=`資料來源：default_db.json（${DB.length}站）`;
+  const dl=$("stationList");
+  DB.forEach(r=>{
+    const o=document.createElement("option");
+    o.value=r.station;
+    dl.appendChild(o);
+  });
+});
 </script>
 </body>
 </html>
