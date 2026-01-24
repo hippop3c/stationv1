@@ -1,239 +1,9 @@
-<!doctype html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>YouBike 每小時在站車輛數（最終穩定版 v3.4）</title>
-
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-
-  <style>
-    :root{
-      --border:#cfd7e3;
-      --muted:#6b7280;
-      --bg:#ffffff;
-      --panel:#f8fafc;
-      --good:#2e7d32;
-      --badbg:#fde2e2;
-      --red:#d32f2f;
-      --orange:#f59e0b;
-      --green:#0a7a1f;
-    }
-    body{
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", Arial, sans-serif;
-      background: var(--bg);
-      margin: 18px;
-      color:#111827;
-    }
-    h1{
-      margin: 0 0 12px 0;
-      font-size: 34px;
-      font-weight: 800;
-      letter-spacing: .2px;
-    }
-
-    .controls{
-      border:1px solid var(--border);
-      border-radius:10px;
-      padding:14px;
-      display:grid;
-      grid-template-columns:
-        72px 260px 72px 90px 60px 90px 60px 90px 60px 90px 80px 90px;
-      gap:10px 10px;
-      align-items:center;
-    }
-    label{
-      font-size: 18px;
-      font-weight: 800;
-      text-align:right;
-      white-space:nowrap;
-    }
-    input{
-      height: 34px;
-      border:1px solid var(--border);
-      border-radius: 6px;
-      padding: 0 10px;
-      font-size: 18px;
-      outline: none;
-    }
-    input:disabled{
-      background:#f3f4f6;
-      color:#374151;
-    }
-
-    .btnRow{
-      grid-column: 1 / -1;
-      display:flex;
-      gap:10px;
-      justify-content:flex-start;
-      align-items:center;
-      margin-top: 2px;
-    }
-    button{
-      height: 36px;
-      border:1px solid #9aa4b2;
-      background:#f5f5f5;
-      border-radius:6px;
-      padding: 0 14px;
-      font-size: 16px;
-      font-weight: 800;
-      cursor:pointer;
-      white-space:nowrap;
-    }
-    button.primary{
-      background:#eaf2ff;
-      border-color:#7aa2ff;
-    }
-    .meta{
-      grid-column: 1 / -1;
-      display:flex;
-      gap:12px;
-      align-items:center;
-      color:var(--muted);
-      font-size: 14px;
-      font-weight: 700;
-      padding-top:2px;
-    }
-
-    .main{
-      margin-top: 14px;
-      display:grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 14px;
-    }
-    .panel{
-      border:1px solid var(--border);
-      border-radius:10px;
-      background:#fff;
-      padding: 10px 12px;
-      min-height: 560px;
-      display:flex;
-      flex-direction:column;
-    }
-    .chartWrap{
-      flex:1;
-      min-height: 520px;
-    }
-    canvas{ width:100% !important; height:100% !important; }
-
-    .right{
-      padding: 10px 12px;
-      display:flex;
-      flex-direction:column;
-    }
-    .summary{
-      background: var(--panel);
-      border-left: 6px solid var(--good);
-      border-radius: 8px;
-      padding: 12px 12px;
-      margin-bottom: 10px;
-      font-size: 18px;
-      font-weight: 900;
-      white-space: pre-line;
-    }
-    .tableWrap{
-      border:1px solid var(--border);
-      border-radius:10px;
-      overflow:hidden;
-      flex:1;
-      display:flex;
-      flex-direction:column;
-    }
-    table{
-      width:100%;
-      border-collapse:collapse;
-      font-size: 18px;
-    }
-    thead th{
-      position: sticky;
-      top: 0;
-      background:#fff;
-      z-index: 2;
-      font-weight: 900;
-      font-size: 20px;
-      padding: 10px 6px;
-      border-bottom:1px solid var(--border);
-    }
-    tbody{
-      display:block;
-      overflow:auto;
-      flex:1;
-    }
-    thead, tbody tr{
-      display:table;
-      width:100%;
-      table-layout:fixed;
-    }
-    td{
-      border-top:1px solid var(--border);
-      padding: 6px 6px;
-      text-align:center;
-      font-weight: 800;
-    }
-    tr.bad{ background: var(--badbg); }
-  </style>
-</head>
-
-<body>
-<h1>YouBike 每小時在站車輛數（最終穩定版 v3.4）</h1>
-
-<div class="controls">
-  <label>場站</label>
-  <input id="stationInput" list="stationList" />
-  <datalist id="stationList"></datalist>
-
-  <label>責任區</label>
-  <input id="areaInput" disabled />
-
-  <label>車位</label>
-  <input id="capInput" disabled />
-
-  <label>5點</label>
-  <input id="v5" type="number" value="0" />
-
-  <label>7–9</label>
-  <input id="x79" type="number" value="0" />
-
-  <label>10–15</label>
-  <input id="x1015" type="number" value="0" />
-
-  <label>21–24</label>
-  <input id="y2124" type="number" value="0" />
-
-  <div class="btnRow">
-    <button class="primary" onclick="updateManual()">更新圖表</button>
-    <button onclick="clickAuto()">自動求解（v3.4）</button>
-  </div>
-
-  <div class="meta">
-    <span id="dbInfo"></span>
-    <span id="status"></span>
-  </div>
-</div>
-
-<div class="main">
-  <div class="panel">
-    <div class="chartWrap">
-      <canvas id="chart"></canvas>
-    </div>
-  </div>
-
-  <div class="panel right">
-    <div id="summary" class="summary"></div>
-    <div class="tableWrap">
-      <table>
-        <thead><tr><th>時間</th><th>在站</th></tr></thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
 <script>
 let DB = [];
 let chart = null;
 
 const HOURS = Array.from({length:19},(_,i)=>i+5);
+const HOURS_6_23 = Array.from({length:18},(_,i)=>i+6);
 
 function $(id){ return document.getElementById(id); }
 function toInt(v){ return Number.isFinite(+v)?+v:0; }
@@ -243,7 +13,7 @@ function getDelta(st,h){
   return st.deltas[String(h)]||0;
 }
 
-/* 唯一新增邏輯 */
+/* 核心：加入 x79 */
 function calcSeries(st,v5,x79,x,y){
   return HOURS.map(h=>{
     let v = v5 + getDelta(st,h);
@@ -253,6 +23,96 @@ function calcSeries(st,v5,x79,x,y){
     return v;
   });
 }
+
+/* 合規小時 */
+function okHoursCount(st, vals){
+  const cap = st.capacity;
+  let c=0;
+  for(let i=1;i<vals.length;i++){
+    if(vals[i]>=1 && vals[i]<=cap-1) c++;
+  }
+  return c;
+}
+
+/* ========== 自動求解（v3.4 原版 + x79） ========== */
+
+function solveBest(st){
+  const cap = st.capacity;
+  let L=-Infinity, U=Infinity;
+
+  for(const h of HOURS_6_23){
+    let off = getDelta(st,h);
+    // x79,x,y 全為 0
+    L = Math.max(L, 1-off);
+    U = Math.min(U, cap-1-off);
+  }
+
+  const lo = Math.max(0, Math.ceil(L));
+  const hi = Math.min(cap, Math.floor(U));
+  if(lo<=hi) return {kind:"最佳解",v5:lo,x79:0,x:0,y:0};
+  return null;
+}
+
+function solveSecond(st){
+  const cap = st.capacity;
+  const LIM=56;
+  let best=null;
+
+  for(let x79=-LIM;x79<=LIM;x79++){
+    for(let x=-LIM;x<=LIM;x++){
+      for(let y=-LIM;y<=LIM;y++){
+        let L=-Infinity,U=Infinity;
+        for(const h of HOURS_6_23){
+          let off = getDelta(st,h);
+          if(h>=7) off+=x79;
+          if(h>=15) off+=x;
+          if(h>=21) off+=y;
+          L=Math.max(L,1-off);
+          U=Math.min(U,cap-1-off);
+        }
+        const lo=Math.max(0,Math.ceil(L));
+        const hi=Math.min(cap,Math.floor(U));
+        if(lo>hi) continue;
+
+        const score=Math.abs(x79)+Math.abs(x)+Math.abs(y);
+        if(!best || score<best.score){
+          best={kind:"次佳解",v5:lo,x79,x,y,score};
+        }
+      }
+    }
+  }
+  return best;
+}
+
+function solveLast(st){
+  const cap = st.capacity;
+  let best=null;
+
+  for(let v5=0;v5<=cap;v5++){
+    for(let x79=-200;x79<=200;x79++){
+      for(let x=-200;x<=200;x++){
+        for(let y=-200;y<=200;y++){
+          const vals=calcSeries(st,v5,x79,x,y);
+          const ok=okHoursCount(st,vals);
+          const disp=Math.abs(x79)+Math.abs(x)+Math.abs(y);
+          if(!best ||
+             ok>best.ok ||
+             (ok===best.ok && disp<best.disp)
+          ){
+            best={kind:"最後解",v5,x79,x,y,ok,disp};
+          }
+        }
+      }
+    }
+  }
+  return best;
+}
+
+function solveAuto(st){
+  return solveBest(st) || solveSecond(st) || solveLast(st);
+}
+
+/* ========== Render ========== */
 
 function render(st,v5,x79,x,y,kind){
   $("areaInput").value = st.area;
@@ -296,9 +156,10 @@ function drawChart(st,vals){
   });
 }
 
+/* ========== UI ========== */
+
 function updateManual(){
-  const name=$("stationInput").value;
-  const st=DB.find(x=>x.station.includes(name));
+  const st=DB.find(x=>x.station.includes($("stationInput").value));
   if(!st) return;
   render(
     st,
@@ -311,11 +172,13 @@ function updateManual(){
 }
 
 function clickAuto(){
-  const name=$("stationInput").value;
-  const st=DB.find(x=>x.station.includes(name));
+  const st=DB.find(x=>x.station.includes($("stationInput").value));
   if(!st) return;
-  render(st,0,0,0,0,"自動");
+  const sol=solveAuto(st);
+  render(st,sol.v5,sol.x79,sol.x,sol.y,sol.kind);
 }
+
+/* ========== Load DB ========== */
 
 fetch("default_db.json")
 .then(r=>r.json())
@@ -330,5 +193,3 @@ fetch("default_db.json")
   });
 });
 </script>
-</body>
-</html>
