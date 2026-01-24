@@ -18,7 +18,7 @@ h1{font-size:32px}
     60px 80px
     60px 80px
     60px 80px
-    80px 80px;
+    60px 80px;
   gap:8px;
 }
 input{height:32px}
@@ -33,8 +33,7 @@ tr.bad{background:#ffdede}
 <h1>YouBike 每小時在站車輛數（最終穩定版 v3.4）</h1>
 
 <div class="controls">
-<label>場站</label>
-<input id="stationInput" list="stationList">
+<label>場站</label><input id="stationInput" list="stationList">
 <datalist id="stationList"></datalist>
 
 <label>責任區</label><input id="areaInput" disabled>
@@ -80,7 +79,7 @@ function getDelta(st,h){
   return st.deltas[String(h)]||0;
 }
 
-/* 核心唯一新增 */
+/* 核心公式：7-9 影響 7-23 */
 function calcSeries(st,v5,x79,x,y){
   return HOURS.map(h=>{
     let v=v5+getDelta(st,h);
@@ -91,7 +90,7 @@ function calcSeries(st,v5,x79,x,y){
   });
 }
 
-/* 合規：1 ~ cap-1 */
+/* 合規小時 */
 function okCount(st,vals){
   let ok=0;
   for(let i=1;i<vals.length;i++){
@@ -100,21 +99,21 @@ function okCount(st,vals){
   return ok;
 }
 
-/* 自動求解完整吃進 x79 */
+/* 真正自動求解（4 維搜尋） */
 function solveAuto(st){
   const cap=st.capacity;
   let best=null;
 
   for(let v5=0;v5<=cap;v5++){
-    for(let x79=-60;x79<=60;x79++){
-      for(let x=-60;x<=60;x++){
-        for(let y=-60;y<=60;y++){
+    for(let x79=-50;x79<=50;x79++){
+      for(let x=-50;x<=50;x++){
+        for(let y=-50;y<=50;y++){
           const vals=calcSeries(st,v5,x79,x,y);
           const ok=okCount(st,vals);
           const cost=Math.abs(x79)+Math.abs(x)+Math.abs(y);
 
           if(!best ||
-            ok>best.ok ||
+             ok>best.ok ||
             (ok===best.ok && cost<best.cost)
           ){
             best={v5,x79,x,y,ok,cost};
@@ -161,8 +160,7 @@ function render(st,v5,x79,x,y,kind){
 }
 
 function updateManual(){
-  const name=$("stationInput").value;
-  const st=DB.find(r=>r.station.includes(name));
+  const st=DB.find(r=>r.station.includes($("stationInput").value));
   if(!st) return;
   render(st,
     toInt($("v5").value),
@@ -174,8 +172,7 @@ function updateManual(){
 }
 
 function clickAuto(){
-  const name=$("stationInput").value;
-  const st=DB.find(r=>r.station.includes(name));
+  const st=DB.find(r=>r.station.includes($("stationInput").value));
   if(!st) return;
   const sol=solveAuto(st);
   render(st,sol.v5,sol.x79,sol.x,sol.y,"自動");
